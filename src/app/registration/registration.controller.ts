@@ -2,6 +2,7 @@ import { Controller, Post, Get, Body, Param, Query, BadRequestException } from '
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { RegistrationService } from './registration.service';
 import { Step1Dto, Step2Dto, Step3Dto, Step4Dto, Step5Dto, Step7Dto, Step8Dto } from '../auth/dto/registration-step.dto';
+import { RegistrationStepDto } from './dto/registration-step.dto';
 
 @ApiTags('Registration')
 @Controller('v1/registration')
@@ -80,6 +81,18 @@ export class RegistrationController {
       throw new BadRequestException('Registration ID is required');
     }
     return this.registrationService.saveStep8(id, data);
+  }
+
+  @Post('step')
+  @ApiOperation({ 
+    summary: 'Save registration step data (unified endpoint)',
+    description: 'Single endpoint to save data for any registration step. The step number determines which fields are required. Steps 1 and 7 can create new registrations (ID optional), while other steps require an existing registration ID.'
+  })
+  @ApiResponse({ status: 201, description: 'Step data saved successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid step number or missing required fields' })
+  @ApiResponse({ status: 404, description: 'Registration not found (for steps requiring ID)' })
+  async saveStep(@Body() dto: RegistrationStepDto) {
+    return this.registrationService.saveStep(dto);
   }
 
   @Get(':id')

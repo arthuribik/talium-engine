@@ -339,6 +339,7 @@ export class AdminService {
               email: true,
               firstName: true,
               lastName: true,
+              status: true,
             },
           },
           identityVerification: true,
@@ -400,6 +401,110 @@ export class AdminService {
           totalPages: Math.ceil(total / limit),
         },
       },
+    };
+  }
+
+  async getAllTransactions(page: number = 1, limit: number = 20) {
+    const skip = (page - 1) * limit;
+    
+    // TODO: Replace with actual Transaction model when it's added to Prisma schema
+    // For now, return empty array with pagination structure
+    // This allows the frontend to work while the Transaction model is being implemented
+    
+    const transactions: any[] = [];
+    const total = 0;
+
+    return {
+      success: true,
+      data: {
+        transactions,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      },
+    };
+  }
+
+  async createJob(userId: string, organisationId: string | undefined, createJobDto: any) {
+    // If no organisationId provided, get the first available organisation
+    let orgId = organisationId;
+    
+    if (!orgId) {
+      const firstOrg = await this.prisma.organisation.findFirst({
+        orderBy: { createdAt: 'desc' },
+      });
+      
+      if (!firstOrg) {
+        throw new NotFoundException('No organisation found. Please create an organisation first.');
+      }
+      
+      orgId = firstOrg.id;
+    }
+
+    // Verify organisation exists
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { id: orgId },
+    });
+
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+
+    // Create job
+    const job = await this.prisma.job.create({
+      data: {
+        organisationId: orgId,
+        jobTitle: createJobDto.jobTitle,
+        location: createJobDto.location,
+        workMode: createJobDto.workMode as any,
+        employmentType: createJobDto.employmentType as any,
+        experienceYears: createJobDto.experienceYears,
+        jobLevel: createJobDto.jobLevel,
+        pay: createJobDto.pay as any,
+        closingDate: createJobDto.closingDate ? new Date(createJobDto.closingDate) : null,
+        description: createJobDto.description,
+        requirements: createJobDto.requirements || [],
+        applyCTA: createJobDto.applyCTA as any,
+        status: 'draft',
+        postedBy: userId,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Job created successfully',
+      data: job,
+    };
+  }
+
+  async updateJobStatus(jobId: string, status: string) {
+    const validStatuses = ['draft', 'published', 'paused', 'closed'];
+    if (!validStatuses.includes(status)) {
+      throw new BadRequestException(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
+    }
+
+    const job = await this.prisma.job.findUnique({
+      where: { id: jobId },
+    });
+
+    if (!job) {
+      throw new NotFoundException('Job not found');
+    }
+
+    const updated = await this.prisma.job.update({
+      where: { id: jobId },
+      data: {
+        status: status as any,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Job status updated successfully',
+      data: updated,
     };
   }
 
@@ -477,6 +582,48 @@ export class AdminService {
     return {
       success: true,
       message: 'Organisation verification approved',
+      data: updated,
+    };
+  }
+
+  async updateOrganisationVerificationStatus(orgId: string, status: string, adminUserId: string) {
+    const validStatuses = ['verified', 'under_review', 'pending', 'rejected', 'not_activated'];
+    if (!validStatuses.includes(status)) {
+      throw new BadRequestException(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
+    }
+
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { id: orgId },
+    });
+
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+
+    const updated = await this.prisma.organisation.update({
+      where: { id: orgId },
+      data: {
+        verificationStatus: status as any,
+      },
+    });
+
+    // Update verification request if it exists
+    if (status === 'verified' || status === 'under_review' || status === 'rejected') {
+      await this.prisma.organisationVerification.updateMany({
+        where: {
+          organisationId: orgId,
+        },
+        data: {
+          status: status as any,
+          reviewedAt: new Date(),
+          reviewedBy: adminUserId,
+        },
+      });
+    }
+
+    return {
+      success: true,
+      message: 'Organisation verification status updated',
       data: updated,
     };
   }

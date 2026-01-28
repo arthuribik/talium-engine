@@ -1,11 +1,13 @@
-import { Controller, Post, Body, Get, Query, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Controller, Post, Body, Get, Query, Param, HttpCode, HttpStatus, BadRequestException } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { CreateBusinessDto } from './dto/create-business.dto';
 import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { RegistrationStepDto } from './dto/registration-step-unified.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -56,11 +58,55 @@ export class AuthController {
   }
 
   @Get('verify-email')
-  @ApiOperation({ summary: 'Verify email with token' })
+  @ApiOperation({ summary: 'Verify email with token (legacy endpoint)' })
   @ApiResponse({ status: 200, description: 'Email verified successfully' })
   @ApiResponse({ status: 400, description: 'Invalid or expired token' })
-  async verifyEmail(@Query('token') token: string) {
+  async verifyEmailWithToken(@Query('token') token: string) {
     return this.authService.verifyEmail(token);
+  }
+
+  @Post('verify-email')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ 
+    summary: 'Verify email with code (for registration)',
+    description: 'Verify email address using a 6-digit verification code. No authentication required.'
+  })
+  @ApiResponse({ status: 200, description: 'Email verified successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid or expired verification code' })
+  async verifyEmailWithCode(@Body() verifyEmailDto: VerifyEmailDto) {
+    return this.authService.verifyEmailWithCode(verifyEmailDto.email, verifyEmailDto.code);
+  }
+
+  @Post('send-verification-code')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ 
+    summary: 'Send verification code to email',
+    description: 'Send a 6-digit verification code to the specified email address. No authentication required.'
+  })
+  @ApiResponse({ status: 200, description: 'Verification code sent successfully' })
+  async sendVerificationCode(@Body() body: { email: string }) {
+    return this.authService.sendVerificationCode(body.email);
+  }
+
+  @Post('registration/step')
+  @ApiOperation({ 
+    summary: 'Save registration step data (unified endpoint)',
+    description: 'Single endpoint to save data for any registration step. The step number determines which fields are required. Steps 1 and 7 can create new registrations (ID optional), while other steps require an existing registration ID.'
+  })
+  @ApiResponse({ status: 201, description: 'Step data saved successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid step number or missing required fields' })
+  @ApiResponse({ status: 404, description: 'Registration not found (for steps requiring ID)' })
+  async saveRegistrationStep(@Body() dto: RegistrationStepDto) {
+    return this.authService.saveRegistrationStep(dto);
+  }
+
+  @Get('registration/:id')
+  @ApiOperation({ summary: 'Get registration progress' })
+  @ApiParam({ name: 'id', description: 'Registration ID' })
+  @ApiResponse({ status: 200, description: 'Registration data retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Registration not found' })
+  async getRegistration(@Param('id') id: string) {
+    return this.authService.getRegistration(id);
   }
 }
 

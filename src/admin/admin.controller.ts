@@ -5,11 +5,15 @@ import { AdminService } from './admin.service';
 import { InviteAdminDto } from './dto/invite-admin.dto';
 import { CompleteOnboardingDto } from './dto/complete-onboarding.dto';
 import { CreateSuperAdminDto } from './dto/create-super-admin.dto';
+import { AuthService } from '../app/auth/auth.service';
 
 @ApiTags('Admin')
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly authService: AuthService,
+  ) {}
 
   @Post('create-super-admin')
   @ApiOperation({ summary: 'Create the first super admin (only if no super admin exists)' })
@@ -60,36 +64,41 @@ export class AdminController {
   }
 
   @Get('organisations')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get all organisations' })
+  @ApiOperation({ summary: 'Get all organisations (Public)' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Organisations retrieved successfully' })
-  async getAllOrganisations(@Request() req, @Query('page') page?: string, @Query('limit') limit?: string) {
+  async getAllOrganisations(@Query('page') page?: string, @Query('limit') limit?: string) {
     return this.adminService.getAllOrganisations(page ? parseInt(page) : 1, limit ? parseInt(limit) : 20);
   }
 
   @Get('professionals')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get all professionals' })
+  @ApiOperation({ summary: 'Get all professionals (Public)' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Professionals retrieved successfully' })
-  async getAllProfessionals(@Request() req, @Query('page') page?: string, @Query('limit') limit?: string) {
+  async getAllProfessionals(@Query('page') page?: string, @Query('limit') limit?: string) {
     return this.adminService.getAllProfessionals(page ? parseInt(page) : 1, limit ? parseInt(limit) : 20);
   }
 
   @Get('jobs')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get all jobs' })
+  @ApiOperation({ summary: 'Get all jobs (Public)' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Jobs retrieved successfully' })
-  async getAllJobs(@Request() req, @Query('page') page?: string, @Query('limit') limit?: string) {
+  async getAllJobs(@Query('page') page?: string, @Query('limit') limit?: string) {
     return this.adminService.getAllJobs(page ? parseInt(page) : 1, limit ? parseInt(limit) : 20);
+  }
+
+  @Get('transactions')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get all transactions' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiResponse({ status: 200, description: 'Transactions retrieved successfully' })
+  async getAllTransactions(@Request() req, @Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.adminService.getAllTransactions(page ? parseInt(page) : 1, limit ? parseInt(limit) : 20);
   }
 
   @Put('users/:userId/activate')
@@ -125,6 +134,17 @@ export class AdminController {
     return this.adminService.approveOrganisationVerification(orgId, req.user.userId);
   }
 
+  @Put('organisations/:orgId/verification-status')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update organisation verification status' })
+  @ApiParam({ name: 'orgId', description: 'Organisation ID' })
+  @ApiResponse({ status: 200, description: 'Verification status updated successfully' })
+  @ApiResponse({ status: 404, description: 'Organisation not found' })
+  async updateOrganisationVerificationStatus(@Request() req, @Param('orgId') orgId: string, @Body() body: { status: string }) {
+    return this.adminService.updateOrganisationVerificationStatus(orgId, body.status, req.user.userId);
+  }
+
   @Put('professionals/:profId/verify/:type/:verificationId')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -140,6 +160,74 @@ export class AdminController {
     @Param('verificationId') verificationId: string,
   ) {
     return this.adminService.approveProfessionalVerification(profId, type, verificationId, req.user.userId);
+  }
+
+  @Get('registrations')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get all organisation registrations' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiResponse({ status: 200, description: 'Registrations retrieved successfully' })
+  async getAllRegistrations(@Request() req, @Query('page') page?: string, @Query('limit') limit?: string) {
+    const pageNum = page ? parseInt(page) : 1;
+    const limitNum = limit ? parseInt(limit) : 20;
+    const allRegistrations = await this.authService.getAllRegistrations();
+    
+    // Paginate
+    const start = (pageNum - 1) * limitNum;
+    const end = start + limitNum;
+    const paginatedRegistrations = allRegistrations.slice(start, end);
+    const total = allRegistrations.length;
+    
+    return {
+      status: 'success',
+      data: {
+        registrations: paginatedRegistrations,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          totalPages: Math.ceil(total / limitNum),
+        },
+      },
+    };
+  }
+
+  @Get('registrations/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get registration details' })
+  @ApiParam({ name: 'id', description: 'Registration ID' })
+  @ApiResponse({ status: 200, description: 'Registration retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Registration not found' })
+  async getRegistration(@Request() req, @Param('id') id: string) {
+    return {
+      status: 'success',
+      data: await this.authService.getRegistrationForAdmin(id),
+    };
+  }
+
+  @Post('jobs')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create a job (Admin)' })
+  @ApiResponse({ status: 201, description: 'Job created successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid input data' })
+  @ApiResponse({ status: 404, description: 'Organisation not found' })
+  async createJob(@Request() req, @Body() createJobDto: any, @Query('organisationId') organisationId?: string) {
+    return this.adminService.createJob(req.user.userId, organisationId, createJobDto);
+  }
+
+  @Put('jobs/:jobId/status')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update job status (Admin)' })
+  @ApiParam({ name: 'jobId', description: 'Job ID' })
+  @ApiResponse({ status: 200, description: 'Job status updated successfully' })
+  @ApiResponse({ status: 404, description: 'Job not found' })
+  async updateJobStatus(@Request() req, @Param('jobId') jobId: string, @Body() body: { status: string }) {
+    return this.adminService.updateJobStatus(jobId, body.status);
   }
 }
 
