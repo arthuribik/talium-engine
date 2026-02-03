@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Put, Param, Body, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Put, Param, Body, Query, UseGuards, Request, NotFoundException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../utility/jwt/jwt-auth.guard';
 import { JobService } from './job.service';
@@ -16,8 +16,16 @@ export class JobController {
   @ApiOperation({ summary: 'Create a job draft' })
   @ApiResponse({ status: 201, description: 'Job created successfully' })
   @ApiResponse({ status: 403, description: 'Forbidden' })
-  async createJob(@Request() req, @Body() createJobDto: CreateJobDto, @Query('organisationId') organisationId: string) {
-    return this.jobService.createJob(req.user.userId, organisationId, createJobDto);
+  @ApiResponse({ status: 404, description: 'Organisation not found' })
+  async createJob(@Request() req, @Body() createJobDto: CreateJobDto, @Query('organisationId') organisationId?: string) {
+    // Simple: get organisationId from query param, or fetch from database using userId
+    const orgId = organisationId || await this.jobService.getOrganisationIdByUserId(req.user.userId);
+    
+    if (!orgId) {
+      throw new NotFoundException('Organisation not found. Please complete your organisation setup.');
+    }
+    
+    return this.jobService.createJob(req.user.userId, orgId, createJobDto);
   }
 
   @Get()

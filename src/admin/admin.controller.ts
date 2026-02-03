@@ -81,6 +81,15 @@ export class AdminController {
     return this.adminService.getAllProfessionals(page ? parseInt(page) : 1, limit ? parseInt(limit) : 20);
   }
 
+  @Get('professionals/:id')
+  @ApiOperation({ summary: 'Get professional by ID (Public)' })
+  @ApiParam({ name: 'id', description: 'Professional ID' })
+  @ApiResponse({ status: 200, description: 'Professional retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Professional not found' })
+  async getProfessionalById(@Param('id') id: string) {
+    return this.adminService.getProfessionalById(id);
+  }
+
   @Get('jobs')
   @ApiOperation({ summary: 'Get all jobs (Public)' })
   @ApiQuery({ name: 'page', required: false, type: Number })
@@ -96,9 +105,33 @@ export class AdminController {
   @ApiOperation({ summary: 'Get all transactions' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'status', required: false, type: String, description: 'Filter by status: all, success, pending, failed' })
   @ApiResponse({ status: 200, description: 'Transactions retrieved successfully' })
-  async getAllTransactions(@Request() req, @Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.adminService.getAllTransactions(page ? parseInt(page) : 1, limit ? parseInt(limit) : 20);
+  async getAllTransactions(@Request() req, @Query('page') page?: string, @Query('limit') limit?: string, @Query('status') status?: string) {
+    return this.adminService.getAllTransactions(page ? parseInt(page) : 1, limit ? parseInt(limit) : 20, status || 'all');
+  }
+
+  @Get('transactions/:transactionId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get transaction details' })
+  @ApiParam({ name: 'transactionId', description: 'Transaction ID' })
+  @ApiResponse({ status: 200, description: 'Transaction retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Transaction not found' })
+  async getTransaction(@Request() req, @Param('transactionId') transactionId: string) {
+    return this.adminService.getTransaction(transactionId);
+  }
+
+  @Put('transactions/:transactionId/validate')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Manually validate a pending payment' })
+  @ApiParam({ name: 'transactionId', description: 'Transaction ID' })
+  @ApiResponse({ status: 200, description: 'Payment validated successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid request' })
+  @ApiResponse({ status: 404, description: 'Transaction not found' })
+  async validatePayment(@Request() req, @Param('transactionId') transactionId: string, @Body() body: { reason: string; proofOfPayment?: string }) {
+    return this.adminService.validatePayment(req.user.userId, transactionId, body.reason, body.proofOfPayment);
   }
 
   @Put('users/:userId/activate')
@@ -228,6 +261,16 @@ export class AdminController {
   @ApiResponse({ status: 404, description: 'Job not found' })
   async updateJobStatus(@Request() req, @Param('jobId') jobId: string, @Body() body: { status: string }) {
     return this.adminService.updateJobStatus(jobId, body.status);
+  }
+
+  @Get('billing/plans')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get subscription plans' })
+  @ApiQuery({ name: 'entityType', required: false, enum: ['professional', 'organisation'] })
+  @ApiResponse({ status: 200, description: 'Plans retrieved successfully' })
+  async getSubscriptionPlans(@Request() req, @Query('entityType') entityType?: 'professional' | 'organisation') {
+    return this.adminService.getSubscriptionPlans(entityType);
   }
 }
 

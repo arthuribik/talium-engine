@@ -7,17 +7,32 @@ import { ApplyJobDto } from './dto/apply-job.dto';
 export class JobService {
   constructor(private prisma: PrismaService) {}
 
+  async getOrganisationIdByUserId(userId: string): Promise<string | null> {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    return organisation?.id || null;
+  }
+
   async createJob(userId: string, organisationId: string, createJobDto: CreateJobDto) {
-    // Verify user owns the organisation
+    // Verify organisation exists
     const organisation = await this.prisma.organisation.findUnique({
       where: { id: organisationId },
+      include: {
+        members: true,
+      },
     });
 
     if (!organisation) {
       throw new NotFoundException('Organisation not found');
     }
 
-    if (organisation.userId !== userId) {
+    // Check if user is the organisation owner OR a member of the organisation
+    const isOwner = organisation.userId === userId;
+    const isMember = organisation.members.some(member => member.userId === userId);
+
+    if (!isOwner && !isMember) {
       throw new ForbiddenException('You do not have permission to create jobs for this organisation');
     }
 

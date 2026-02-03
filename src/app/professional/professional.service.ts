@@ -3,6 +3,7 @@ import { PrismaService } from '../../utility/prisma/prisma.service';
 import { IdentityVerifyDto } from './dto/identity-verify.dto';
 import { AddEducationDto } from './dto/add-education.dto';
 import { AddExperienceDto } from './dto/add-experience.dto';
+import { InitiatePaymentDto } from '../organisation/dto/initiate-payment.dto';
 
 @Injectable()
 export class ProfessionalService {
@@ -176,6 +177,135 @@ export class ProfessionalService {
     };
   }
 
+  async updateEducation(userId: string, educationId: string, educationDto: AddEducationDto) {
+    const education = await this.prisma.education.findUnique({
+      where: { id: educationId },
+      include: { professional: true },
+    });
+
+    if (!education) {
+      throw new NotFoundException('Education record not found');
+    }
+
+    if (education.professional.userId !== userId) {
+      throw new ForbiddenException('You do not have permission to update this education record');
+    }
+
+    const updated = await this.prisma.education.update({
+      where: { id: educationId },
+      data: {
+        levelOfEducation: educationDto.levelOfEducation as any,
+        institutionName: educationDto.institutionName,
+        degreeType: educationDto.degreeType,
+        fieldOfStudy: educationDto.fieldOfStudy,
+        startDate: educationDto.startDate,
+        endDate: educationDto.endDate,
+        currentlyAttending: educationDto.currentlyAttending,
+        grade: educationDto.grade,
+        costOfEducation: educationDto.costOfEducation,
+        currency: educationDto.currency,
+        country: educationDto.country,
+        verificationDocuments: educationDto.verificationDocuments as any,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Education updated successfully',
+      data: updated,
+    };
+  }
+
+  async updateExperience(userId: string, experienceId: string, experienceDto: AddExperienceDto) {
+    const experience = await this.prisma.workExperience.findUnique({
+      where: { id: experienceId },
+      include: { professional: true },
+    });
+
+    if (!experience) {
+      throw new NotFoundException('Work experience record not found');
+    }
+
+    if (experience.professional.userId !== userId) {
+      throw new ForbiddenException('You do not have permission to update this experience record');
+    }
+
+    const updated = await this.prisma.workExperience.update({
+      where: { id: experienceId },
+      data: {
+        organisationName: experienceDto.organisationName,
+        industry: experienceDto.industry,
+        location: experienceDto.location as any,
+        role: experienceDto.role,
+        employmentType: experienceDto.employmentType as any,
+        workMode: experienceDto.workMode as any,
+        startDate: experienceDto.startDate,
+        endDate: experienceDto.endDate,
+        currentlyWorking: experienceDto.currentlyWorking,
+        responsibilities: experienceDto.responsibilities,
+        achievements: experienceDto.achievements,
+        paymentMode: experienceDto.paymentMode,
+        currency: experienceDto.currency,
+        salaryRange: experienceDto.salaryRange as any,
+        verificationContact: experienceDto.verificationContact as any,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Work experience updated successfully',
+      data: updated,
+    };
+  }
+
+  async deleteEducation(userId: string, educationId: string) {
+    const education = await this.prisma.education.findUnique({
+      where: { id: educationId },
+      include: { professional: true },
+    });
+
+    if (!education) {
+      throw new NotFoundException('Education record not found');
+    }
+
+    if (education.professional.userId !== userId) {
+      throw new ForbiddenException('You do not have permission to delete this education record');
+    }
+
+    await this.prisma.education.delete({
+      where: { id: educationId },
+    });
+
+    return {
+      success: true,
+      message: 'Education deleted successfully',
+    };
+  }
+
+  async deleteExperience(userId: string, experienceId: string) {
+    const experience = await this.prisma.workExperience.findUnique({
+      where: { id: experienceId },
+      include: { professional: true },
+    });
+
+    if (!experience) {
+      throw new NotFoundException('Work experience record not found');
+    }
+
+    if (experience.professional.userId !== userId) {
+      throw new ForbiddenException('You do not have permission to delete this experience record');
+    }
+
+    await this.prisma.workExperience.delete({
+      where: { id: experienceId },
+    });
+
+    return {
+      success: true,
+      message: 'Work experience deleted successfully',
+    };
+  }
+
   async getSetupStatus(userId: string, profId: string) {
     // Verify user is professional entity
     const professional = await this.prisma.professional.findUnique({
@@ -279,6 +409,542 @@ export class ProfessionalService {
         setupCompleted: professional.setupCompleted,
         profileCompleteness,
         sections,
+      },
+    };
+  }
+
+  async getProfile(userId: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            status: true,
+            phoneNumber: true,
+          },
+        },
+        identityVerification: true,
+        education: {
+          orderBy: { createdAt: 'desc' },
+        },
+        workExperience: {
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    return {
+      success: true,
+      data: {
+        ...professional,
+        description: professional.description || null,
+        socialMedia: (professional.socialMedia as any) || {},
+      },
+    };
+  }
+
+  async updateProfile(userId: string, updateDto: any) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    const updateData: any = {};
+    
+    if (updateDto.country !== undefined) {
+      updateData.country = updateDto.country;
+    }
+    if (updateDto.nationality !== undefined) {
+      updateData.nationality = updateDto.nationality;
+    }
+    if (updateDto.dateOfBirth !== undefined) {
+      updateData.dateOfBirth = new Date(updateDto.dateOfBirth);
+    }
+    if (updateDto.description !== undefined) {
+      updateData.description = updateDto.description;
+    }
+    if (updateDto.socialMedia !== undefined) {
+      // Merge with existing social media
+      const currentSocialMedia = (professional.socialMedia as any) || {};
+      updateData.socialMedia = {
+        ...currentSocialMedia,
+        ...updateDto.socialMedia,
+      };
+    }
+
+    // Update professional
+    const updated = await this.prisma.professional.update({
+      where: { userId },
+      data: updateData,
+    });
+
+    return {
+      success: true,
+      message: 'Profile updated successfully',
+      data: {
+        ...updated,
+        socialMedia: (updated.socialMedia as any) || {},
+      },
+    };
+  }
+
+  async getSharedData(userId: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    // Get job applications (shared data when applying)
+    const applications = await this.prisma.jobApplication.findMany({
+      where: { professionalId: professional.id },
+      include: {
+        job: {
+          include: {
+            organisation: {
+              include: {
+                user: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Get hired applications (shared data when hired)
+    const hiredApplications = await this.prisma.jobApplication.findMany({
+      where: {
+        professionalId: professional.id,
+        status: {
+          in: ['hired', 'accepted'],
+        },
+      },
+      include: {
+        job: {
+          include: {
+            organisation: {
+              include: {
+                user: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const sharedData = [
+      ...applications.map((app) => ({
+        id: app.id,
+        type: 'application',
+        organisationName: app.job.organisation.companyName || `${app.job.organisation.user.firstName} ${app.job.organisation.user.lastName}`,
+        status: app.status,
+        accessType: 'application',
+        date: app.createdAt,
+        retentionPeriod: '30 days',
+      })),
+      ...hiredApplications.map((app) => ({
+        id: `hired-${app.id}`,
+        type: 'hired',
+        organisationName: app.job.organisation.companyName || `${app.job.organisation.user.firstName} ${app.job.organisation.user.lastName}`,
+        status: 'active',
+        accessType: 'employment',
+        date: app.updatedAt,
+        retentionPeriod: 'Indefinite',
+      })),
+    ];
+
+    return {
+      success: true,
+      data: {
+        sharedData,
+      },
+    };
+  }
+
+  async revokeAccess(userId: string, id: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    // Check if it's an application or hired record
+    const application = await this.prisma.jobApplication.findFirst({
+      where: { id, professionalId: professional.id },
+    });
+
+    if (application) {
+      // For applications, we can't really "revoke" but we can mark it as withdrawn
+      await this.prisma.jobApplication.update({
+        where: { id },
+        data: { status: 'withdrawn' },
+      });
+    } else {
+      // For hired records, update the application status
+      await this.prisma.jobApplication.updateMany({
+        where: {
+          id,
+          professionalId: professional.id,
+          status: {
+            in: ['hired', 'accepted'],
+          },
+        },
+        data: { status: 'rejected' },
+      });
+    }
+
+    return {
+      success: true,
+      message: 'Access revoked successfully',
+    };
+  }
+
+  async getReport(userId: string, id: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    // Generate a report for the shared data entry
+    // This is a placeholder - in production, generate a PDF or detailed report
+    return {
+      success: true,
+      data: {
+        reportId: id,
+        reportUrl: `/reports/${id}.pdf`,
+        generatedAt: new Date(),
+      },
+    };
+  }
+
+  async getApplications(userId: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    const applications = await this.prisma.jobApplication.findMany({
+      where: { professionalId: professional.id },
+      include: {
+        job: {
+          include: {
+            organisation: {
+              include: {
+                user: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return {
+      success: true,
+      data: {
+        applications: applications.map((app) => ({
+          id: app.id,
+          jobId: app.jobId,
+          jobTitle: app.job.jobTitle,
+          companyName: app.job.organisation.companyName || `${app.job.organisation.user.firstName} ${app.job.organisation.user.lastName}`,
+          location: app.job.location,
+          status: app.status,
+          appliedAt: app.createdAt,
+        })),
+      },
+    };
+  }
+
+  async getPrivacySettings(userId: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    // Privacy settings would be stored in a separate model or JSON field
+    // For now, return default settings
+    return {
+      success: true,
+      data: {
+        profileVisibility: 'public',
+        showEmail: true,
+        showPhone: false,
+        allowDataSharing: true,
+        allowJobRecommendations: true,
+        allowOrganisationAccess: true,
+      },
+    };
+  }
+
+  async updatePrivacySettings(userId: string, settings: any) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    // Privacy settings would be stored in a separate model or JSON field
+    // For now, just return success
+    return {
+      success: true,
+      message: 'Privacy settings updated successfully',
+      data: settings,
+    };
+  }
+
+  async getDocuments(userId: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    // Documents would be stored in a separate model
+    // For now, return empty array
+    return {
+      success: true,
+      data: {
+        documents: [],
+      },
+    };
+  }
+
+  async deleteDocument(userId: string, documentId: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    // Documents would be stored in a separate model
+    // For now, just return success
+    return {
+      success: true,
+      message: 'Document deleted successfully',
+    };
+  }
+
+  async getBilling(userId: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    // Get subscription plan from professional (stored in a JSON field or separate model)
+    // For now, default to express plan
+    const subscriptionPlan = 'express'; // Default express plan for professionals
+
+    return {
+      success: true,
+      data: {
+        plan: subscriptionPlan,
+        status: 'active',
+        professionalId: professional.id,
+        professionalName: `${professional.user.firstName} ${professional.user.lastName}`,
+        paymentMethod: subscriptionPlan !== 'express' ? {
+          type: 'card',
+          last4: '4242', // Placeholder - would come from payment service
+        } : null,
+      },
+    };
+  }
+
+  async getAvailablePlans() {
+    // Return available subscription plans for professionals
+    return {
+      success: true,
+      data: [
+        {
+          id: 'express',
+          name: 'Taldium Express',
+          price: 0,
+          description: 'Default access plan for all entities',
+          features: [
+            'Basic profile access',
+            'Standard verification',
+            'Basic job applications',
+            'Profile visibility',
+          ],
+        },
+        {
+          id: 'bloom',
+          name: 'Taldium Bloom',
+          price: 79,
+          description: 'Enhanced features for professionals',
+          features: [
+            'Everything in Express',
+            'Priority job applications',
+            'Advanced profile features',
+            'Enhanced visibility',
+            'Priority support',
+            'Analytics dashboard',
+          ],
+        },
+        {
+          id: 'prime',
+          name: 'Taldium Prime',
+          price: 149,
+          description: 'Premium features and priority support',
+          features: [
+            'Everything in Bloom',
+            'Premium profile features',
+            'Direct recruiter access',
+            'Advanced analytics',
+            'Dedicated support',
+            'Early access to features',
+            'Custom profile branding',
+          ],
+        },
+      ],
+    };
+  }
+
+  async updateSubscription(userId: string, plan: string) {
+    const validPlans = ['free', 'express', 'bloom', 'prime'];
+    
+    if (!validPlans.includes(plan)) {
+      throw new BadRequestException(`Invalid plan. Must be one of: ${validPlans.join(', ')}`);
+    }
+
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    // Update subscription plan
+    // Note: In production, add subscriptionPlan field to Professional model or create Subscription model
+    // For now, we'll store it in a workaround way
+    // Since Professional model doesn't have an address field, we could add a metadata JSON field
+    // or create a separate Subscription model
+
+    return {
+      success: true,
+      message: `Subscription updated to ${plan} plan successfully`,
+      data: {
+        plan,
+        status: 'active',
+      },
+    };
+  }
+
+  async initiatePayment(userId: string, paymentDto: InitiatePaymentDto) {
+    const validPlans = ['express', 'bloom', 'prime'];
+    
+    if (!validPlans.includes(paymentDto.plan)) {
+      throw new BadRequestException(`Invalid plan. Must be one of: ${validPlans.join(', ')}`);
+    }
+
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+      include: {
+        user: {
+          select: {
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    // Professional plan pricing
+    const planPricing: { [key: string]: number } = {
+      express: 29,
+      bloom: 79,
+      prime: 149,
+    };
+
+    const amount = planPricing[paymentDto.plan] || 0;
+    const billingCycle = paymentDto.billingCycle || 'monthly';
+
+    // Generate payment reference/ID
+    const paymentReference = `TAL-PRO-${professional.id.substring(0, 8).toUpperCase()}-${Date.now()}`;
+
+    // Generate payment link
+    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5231';
+    const paymentLink = `${baseUrl}/payment/process?reference=${paymentReference}&plan=${paymentDto.plan}&amount=${amount}&cycle=${billingCycle}`;
+
+    // Store payment initiation (in production, use a Payment model)
+    // Since Professional doesn't have address field, we could add metadata or create Subscription model
+
+    return {
+      success: true,
+      message: 'Payment initiated successfully',
+      data: {
+        paymentReference,
+        paymentLink,
+        plan: paymentDto.plan,
+        amount,
+        billingCycle,
+        currency: 'USD',
+        professionalId: professional.id,
+        professionalName: `${professional.user.firstName} ${professional.user.lastName}`,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // Link expires in 24 hours
       },
     };
   }

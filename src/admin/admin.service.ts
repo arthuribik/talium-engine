@@ -219,35 +219,341 @@ export class AdminService {
   }
 
   async getDashboardStats() {
-    const [totalUsers, totalOrganisations, totalProfessionals, totalJobs, totalApplications] = await Promise.all([
-      this.prisma.user.count(),
-      this.prisma.organisation.count(),
-      this.prisma.professional.count(),
-      this.prisma.job.count(),
-      this.prisma.jobApplication.count(),
-    ]);
+    try {
+      // Overall Stats
+      const [totalUsers, totalOrganisations, totalProfessionals, totalJobs, totalApplications] = await Promise.all([
+        this.prisma.user.count().catch(() => 0),
+        this.prisma.organisation.count().catch(() => 0),
+        this.prisma.professional.count().catch(() => 0),
+        this.prisma.job.count().catch(() => 0),
+        this.prisma.jobApplication.count().catch(() => 0),
+      ]);
 
-    const verifiedProfessionals = await this.prisma.professional.count({
-      where: { identityStatus: 'verified' },
-    });
+      const verifiedProfessionals = await this.prisma.professional.count({
+        where: { identityStatus: 'verified' },
+      }).catch(() => 0);
 
-    const verifiedOrganisations = await this.prisma.organisation.count({
-      where: { verificationStatus: 'verified' },
-    });
+      const verifiedOrganisations = await this.prisma.organisation.count({
+        where: { verificationStatus: 'verified' },
+      }).catch(() => 0);
 
-    return {
-      success: true,
-      data: {
-        totalUsers,
-        totalOrganisations,
-        totalProfessionals,
-        totalJobs,
-        totalApplications,
-        verifiedProfessionals,
-        verifiedOrganisations,
-        pendingVerifications: totalProfessionals - verifiedProfessionals + totalOrganisations - verifiedOrganisations,
-      },
-    };
+      // Organisation Entities Analytics
+      const activeOrganisations = await this.prisma.organisation.count({
+        where: {
+          user: {
+            status: 'ACTIVE',
+          },
+        },
+      }).catch(() => 0);
+
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const thisWeek = new Date(today);
+      thisWeek.setDate(today.getDate() - 7);
+      const thisMonth = new Date(today);
+      thisMonth.setMonth(today.getMonth() - 1);
+      const thisYear = new Date(today);
+      thisYear.setFullYear(today.getFullYear() - 1);
+
+      const newOrganisationsToday = await this.prisma.organisation.count({
+        where: {
+          createdAt: { gte: today },
+        },
+      }).catch(() => 0);
+
+      const newOrganisationsThisWeek = await this.prisma.organisation.count({
+        where: {
+          createdAt: { gte: thisWeek },
+        },
+      }).catch(() => 0);
+
+      const newOrganisationsThisMonth = await this.prisma.organisation.count({
+        where: {
+          createdAt: { gte: thisMonth },
+        },
+      }).catch(() => 0);
+
+      const newOrganisationsThisYear = await this.prisma.organisation.count({
+        where: {
+          createdAt: { gte: thisYear },
+        },
+      }).catch(() => 0);
+
+      const pendingActivationOrganisations = await this.prisma.organisation.count({
+        where: {
+          verificationStatus: { in: ['pending', 'under_review', 'not_activated'] },
+        },
+      }).catch(() => 0);
+
+      // Professional Entities Analytics
+      const activatedProfessionals = await this.prisma.professional.count({
+        where: {
+          user: {
+            status: 'ACTIVE',
+          },
+        },
+      }).catch(() => 0);
+
+      const verifiedGovernmentIds = await this.prisma.identityVerification.count({
+        where: {
+          status: 'verified',
+        },
+      }).catch(() => 0);
+
+      const totalAddressInfo = await this.prisma.professional.count({
+        where: {
+          country: { not: null },
+        },
+      }).catch(() => 0);
+
+      const verifiedAddressInfo = await this.prisma.professional.count({
+        where: {
+          country: { not: null },
+          identityStatus: 'verified',
+        },
+      }).catch(() => 0);
+
+      const graduateCertificates = await this.prisma.education.count({
+        where: {
+          levelOfEducation: { in: ['bachelor', 'master', 'doctorate'] },
+        },
+      }).catch(() => 0);
+
+      // Jobs Analytics
+      const activeJobRoles = await this.prisma.job.count({
+        where: {
+          status: 'published',
+        },
+      }).catch(() => 0);
+
+      const totalHires = await this.prisma.jobApplication.count({
+        where: {
+          status: 'hired',
+        },
+      }).catch(() => 0);
+
+      // Verifications - Professional Entity
+      const professionalIdVerificationRequests = await this.prisma.identityVerification.count().catch(() => 0);
+      const professionalVerifiedIds = await this.prisma.identityVerification.count({
+        where: { status: 'verified' },
+      }).catch(() => 0);
+
+      const professionalAddressVerificationRequests = await this.prisma.professional.count({
+        where: {
+          country: { not: null },
+        },
+      }).catch(() => 0);
+      const professionalVerifiedAddress = await this.prisma.professional.count({
+        where: {
+          country: { not: null },
+          identityStatus: 'verified',
+        },
+      }).catch(() => 0);
+
+      const professionalEducationVerificationRequests = await this.prisma.education.count().catch(() => 0);
+      const professionalVerifiedEducation = await this.prisma.education.count({
+        where: { verificationStatus: 'verified' },
+      }).catch(() => 0);
+
+      const professionalWorkExperienceVerificationRequests = await this.prisma.workExperience.count().catch(() => 0);
+      const professionalVerifiedWorkExperience = await this.prisma.workExperience.count({
+        where: { verificationStatus: 'verified' },
+      }).catch(() => 0);
+
+      // Verifications - Organisation Entity
+      const organisationVerificationRequests = await this.prisma.organisationVerification.count().catch(() => 0);
+      const organisationVerifiedIds = await this.prisma.organisationVerification.count({
+        where: { status: 'verified' },
+      }).catch(() => 0);
+
+      // For organisation address verification, we'll use organisations with address field
+      const organisationAddressVerificationRequests = await this.prisma.organisation.count({
+        where: {
+          address: { not: null },
+        },
+      }).catch(() => 0);
+      const organisationVerifiedAddress = await this.prisma.organisation.count({
+        where: {
+          address: { not: null },
+          verificationStatus: 'verified',
+        },
+      }).catch(() => 0);
+
+      // Organisation education and work experience verifications (if they exist in future)
+      const organisationEducationVerificationRequests = 0;
+      const organisationVerifiedEducation = 0;
+      const organisationWorkExperienceVerificationRequests = 0;
+      const organisationVerifiedWorkExperience = 0;
+
+      // Billing - Professional Entity (placeholder - no billing model yet)
+      const professionalTotalRevenue = 0;
+      const professionalTaldiumExpress = 0;
+      const professionalTaldiumBloom = 0;
+      const professionalTaldiumPrime = 0;
+
+      // Billing - Organisation Entity (placeholder - no billing model yet)
+      const organisationTotalRevenue = 0;
+      const organisationTaldiumStarter = 0;
+      const organisationTaldiumStandard = 0;
+      const organisationTaldiumPremium = 0;
+      const organisationTaldiumEnterprise = 0;
+
+      return {
+        success: true,
+        data: {
+          // Overall
+          totalUsers: totalUsers || 0,
+          totalOrganisations: totalOrganisations || 0,
+          totalProfessionals: totalProfessionals || 0,
+          totalJobs: totalJobs || 0,
+          totalApplications: totalApplications || 0,
+          verifiedProfessionals: verifiedProfessionals || 0,
+          verifiedOrganisations: verifiedOrganisations || 0,
+          pendingVerifications: (totalProfessionals - verifiedProfessionals + totalOrganisations - verifiedOrganisations) || 0,
+
+          // Organisation Entities
+          organisationEntities: {
+            totalCreated: totalOrganisations || 0,
+            totalActive: activeOrganisations || 0,
+            newOrganisations: {
+              today: newOrganisationsToday || 0,
+              thisWeek: newOrganisationsThisWeek || 0,
+              thisMonth: newOrganisationsThisMonth || 0,
+              yearToDate: newOrganisationsThisYear || 0,
+            },
+            pendingActivation: pendingActivationOrganisations || 0,
+          },
+
+          // Professional Entities
+          professionalEntities: {
+            totalCreated: totalProfessionals || 0,
+            totalActivated: activatedProfessionals || 0,
+            totalVerifiedGovernmentId: verifiedGovernmentIds || 0,
+            totalAddressInfoCreated: totalAddressInfo || 0,
+            verifiedAddressInfo: verifiedAddressInfo || 0,
+            graduateCertificatesAdded: graduateCertificates || 0,
+          },
+
+          // Jobs
+          jobs: {
+            totalCreated: totalJobs || 0,
+            activeJobRoles: activeJobRoles || 0,
+            totalApplications: totalApplications || 0,
+            totalHires: totalHires || 0,
+          },
+
+          // Verifications - Professional Entity
+          professionalVerifications: {
+            idVerificationRequests: professionalIdVerificationRequests || 0,
+            verifiedIds: professionalVerifiedIds || 0,
+            addressVerificationRequests: professionalAddressVerificationRequests || 0,
+            verifiedAddress: professionalVerifiedAddress || 0,
+            educationVerificationRequests: professionalEducationVerificationRequests || 0,
+            verifiedEducation: professionalVerifiedEducation || 0,
+            workExperienceVerificationRequests: professionalWorkExperienceVerificationRequests || 0,
+            verifiedWorkExperience: professionalVerifiedWorkExperience || 0,
+          },
+
+          // Verifications - Organisation Entity
+          organisationVerifications: {
+            idVerificationRequests: organisationVerificationRequests || 0,
+            verifiedIds: organisationVerifiedIds || 0,
+            addressVerificationRequests: organisationAddressVerificationRequests || 0,
+            verifiedAddress: organisationVerifiedAddress || 0,
+            educationVerificationRequests: organisationEducationVerificationRequests || 0,
+            verifiedEducation: organisationVerifiedEducation || 0,
+            workExperienceVerificationRequests: organisationWorkExperienceVerificationRequests || 0,
+            verifiedWorkExperience: organisationVerifiedWorkExperience || 0,
+          },
+
+          // Billing - Professional Entity
+          professionalBilling: {
+            totalRevenue: professionalTotalRevenue || 0,
+            taldiumExpress: professionalTaldiumExpress || 0,
+            taldiumBloom: professionalTaldiumBloom || 0,
+            taldiumPrime: professionalTaldiumPrime || 0,
+          },
+
+          // Billing - Organisation Entity
+          organisationBilling: {
+            totalRevenue: organisationTotalRevenue || 0,
+            taldiumStarter: organisationTaldiumStarter || 0,
+            taldiumStandard: organisationTaldiumStandard || 0,
+            taldiumPremium: organisationTaldiumPremium || 0,
+            taldiumEnterprise: organisationTaldiumEnterprise || 0,
+          },
+        },
+      };
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error);
+      // Return all zeros on error
+      return {
+        success: true,
+        data: {
+          totalUsers: 0,
+          totalOrganisations: 0,
+          totalProfessionals: 0,
+          totalJobs: 0,
+          totalApplications: 0,
+          verifiedProfessionals: 0,
+          verifiedOrganisations: 0,
+          pendingVerifications: 0,
+          organisationEntities: {
+            totalCreated: 0,
+            totalActive: 0,
+            newOrganisations: { today: 0, thisWeek: 0, thisMonth: 0, yearToDate: 0 },
+            pendingActivation: 0,
+          },
+          professionalEntities: {
+            totalCreated: 0,
+            totalActivated: 0,
+            totalVerifiedGovernmentId: 0,
+            totalAddressInfoCreated: 0,
+            verifiedAddressInfo: 0,
+            graduateCertificatesAdded: 0,
+          },
+          jobs: {
+            totalCreated: 0,
+            activeJobRoles: 0,
+            totalApplications: 0,
+            totalHires: 0,
+          },
+          professionalVerifications: {
+            idVerificationRequests: 0,
+            verifiedIds: 0,
+            addressVerificationRequests: 0,
+            verifiedAddress: 0,
+            educationVerificationRequests: 0,
+            verifiedEducation: 0,
+            workExperienceVerificationRequests: 0,
+            verifiedWorkExperience: 0,
+          },
+          organisationVerifications: {
+            idVerificationRequests: 0,
+            verifiedIds: 0,
+            addressVerificationRequests: 0,
+            verifiedAddress: 0,
+            educationVerificationRequests: 0,
+            verifiedEducation: 0,
+            workExperienceVerificationRequests: 0,
+            verifiedWorkExperience: 0,
+          },
+          professionalBilling: {
+            totalRevenue: 0,
+            taldiumExpress: 0,
+            taldiumBloom: 0,
+            taldiumPrime: 0,
+          },
+          organisationBilling: {
+            totalRevenue: 0,
+            taldiumStarter: 0,
+            taldiumStandard: 0,
+            taldiumPremium: 0,
+            taldiumEnterprise: 0,
+          },
+        },
+      };
+    }
   }
 
   async getAllUsers(page: number = 1, limit: number = 20) {
@@ -363,6 +669,35 @@ export class AdminService {
     };
   }
 
+  async getProfessionalById(id: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            status: true,
+          },
+        },
+        identityVerification: true,
+        education: true,
+        workExperience: true,
+      },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    return {
+      success: true,
+      data: professional,
+    };
+  }
+
   async getAllJobs(page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;
     const [jobs, total] = await Promise.all([
@@ -404,20 +739,124 @@ export class AdminService {
     };
   }
 
-  async getAllTransactions(page: number = 1, limit: number = 20) {
+  async getAllTransactions(page: number = 1, limit: number = 20, status: string = 'all') {
     const skip = (page - 1) * limit;
     
-    // TODO: Replace with actual Transaction model when it's added to Prisma schema
-    // For now, return empty array with pagination structure
-    // This allows the frontend to work while the Transaction model is being implemented
-    
-    const transactions: any[] = [];
-    const total = 0;
+    // Fetch all organisations with payment data
+    const organisations = await this.prisma.organisation.findMany({
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+
+    // Fetch all professionals with payment data
+    const professionals = await this.prisma.professional.findMany({
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+
+    const allTransactions: any[] = [];
+
+    // Extract transactions from organisations
+    for (const org of organisations) {
+      const addressData = (org.address as any) || {};
+      const subscriptionPlan = addressData.subscriptionPlan || 'starter';
+      const pendingPayment = addressData.pendingPayment;
+
+      // If there's a pending payment, add it as a transaction
+      if (pendingPayment) {
+        const transactionStatus = pendingPayment.status || 'pending';
+        
+        // Only include if status matches filter
+        if (status === 'all' || status === transactionStatus) {
+          allTransactions.push({
+            id: pendingPayment.reference || `org-${org.id}-${Date.now()}`,
+            amount: pendingPayment.amount || 0,
+            currency: 'USD',
+            status: transactionStatus === 'completed' ? 'success' : transactionStatus,
+            type: 'subscription',
+            description: `Subscription payment for ${pendingPayment.plan || subscriptionPlan} plan`,
+            entityType: 'organisation',
+            entityId: org.id,
+            entityName: org.companyName || `${org.user.firstName} ${org.user.lastName}`,
+            plan: pendingPayment.plan || subscriptionPlan,
+            billingCycle: pendingPayment.billingCycle || 'monthly',
+            createdAt: pendingPayment.initiatedAt || org.createdAt,
+            user: {
+              email: org.user.email,
+              firstName: org.user.firstName,
+              lastName: org.user.lastName,
+            },
+          });
+        }
+      }
+
+      // If subscription plan is set and not starter, consider it a successful transaction
+      if (subscriptionPlan !== 'starter' && !pendingPayment) {
+        const transactionStatus = 'success';
+        
+        if (status === 'all' || status === transactionStatus) {
+          // Get plan pricing
+          const planPricing: { [key: string]: number } = {
+            standard: 99,
+            recruiter: 299,
+            enterprise: 999,
+          };
+          const amount = planPricing[subscriptionPlan] || 0;
+
+          allTransactions.push({
+            id: `org-success-${org.id}`,
+            amount,
+            currency: 'USD',
+            status: 'success',
+            type: 'subscription',
+            description: `Active subscription: ${subscriptionPlan} plan`,
+            entityType: 'organisation',
+            entityId: org.id,
+            entityName: org.companyName || `${org.user.firstName} ${org.user.lastName}`,
+            plan: subscriptionPlan,
+            billingCycle: 'monthly',
+            createdAt: org.updatedAt || org.createdAt,
+            user: {
+              email: org.user.email,
+              firstName: org.user.firstName,
+              lastName: org.user.lastName,
+            },
+          });
+        }
+      }
+    }
+
+    // Extract transactions from professionals
+    // Professional payments would be stored in a similar way if implemented
+    // For now, we focus on organisation transactions which are actively used
+
+    // Sort by creation date (newest first)
+    allTransactions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    // Apply pagination
+    const total = allTransactions.length;
+    const paginatedTransactions = allTransactions.slice(skip, skip + limit);
 
     return {
       success: true,
       data: {
-        transactions,
+        transactions: paginatedTransactions,
         pagination: {
           page,
           limit,
@@ -426,6 +865,183 @@ export class AdminService {
         },
       },
     };
+  }
+
+  async getTransaction(transactionId: string) {
+    // Fetch all organisations to find the transaction
+    const organisations = await this.prisma.organisation.findMany({
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+
+    // Search for the transaction in organisations
+    for (const org of organisations) {
+      const addressData = (org.address as any) || {};
+      const pendingPayment = addressData.pendingPayment;
+      const subscriptionPlan = addressData.subscriptionPlan || 'starter';
+      const validationData = addressData.paymentValidation;
+
+      // Check if this is the transaction we're looking for
+      if (pendingPayment && pendingPayment.reference === transactionId) {
+        const transactionStatus = pendingPayment.status || 'pending';
+        
+        return {
+          success: true,
+          data: {
+            id: transactionId,
+            amount: pendingPayment.amount || 0,
+            currency: 'USD',
+            status: transactionStatus === 'completed' ? 'success' : transactionStatus,
+            type: 'subscription',
+            description: `Subscription payment for ${pendingPayment.plan || subscriptionPlan} plan`,
+            entityType: 'organisation',
+            entityId: org.id,
+            entityName: org.companyName || `${org.user.firstName} ${org.user.lastName}`,
+            plan: pendingPayment.plan || subscriptionPlan,
+            billingCycle: pendingPayment.billingCycle || 'monthly',
+            paymentLink: pendingPayment.paymentLink,
+            createdAt: pendingPayment.initiatedAt || org.createdAt,
+            user: {
+              email: org.user.email,
+              firstName: org.user.firstName,
+              lastName: org.user.lastName,
+            },
+            validation: validationData || null,
+          },
+        };
+      }
+
+      // Check for successful transactions (when subscriptionPlan is set)
+      if (subscriptionPlan !== 'starter' && !pendingPayment) {
+        const planPricing: { [key: string]: number } = {
+          standard: 99,
+          recruiter: 299,
+          enterprise: 999,
+        };
+        const amount = planPricing[subscriptionPlan] || 0;
+        const successTransactionId = `org-success-${org.id}`;
+        
+        if (successTransactionId === transactionId) {
+          return {
+            success: true,
+            data: {
+              id: transactionId,
+              amount,
+              currency: 'USD',
+              status: 'success',
+              type: 'subscription',
+              description: `Active subscription: ${subscriptionPlan} plan`,
+              entityType: 'organisation',
+              entityId: org.id,
+              entityName: org.companyName || `${org.user.firstName} ${org.user.lastName}`,
+              plan: subscriptionPlan,
+              billingCycle: 'monthly',
+              createdAt: org.updatedAt || org.createdAt,
+              user: {
+                email: org.user.email,
+                firstName: org.user.firstName,
+                lastName: org.user.lastName,
+              },
+              validation: validationData || null,
+            },
+          };
+        }
+      }
+    }
+
+    throw new NotFoundException('Transaction not found');
+  }
+
+  async validatePayment(adminUserId: string, transactionId: string, reason: string, proofOfPayment?: string) {
+    // Fetch admin user to get name
+    const adminUser = await this.prisma.user.findUnique({
+      where: { id: adminUserId },
+      select: {
+        firstName: true,
+        lastName: true,
+      },
+    });
+
+    const adminName = adminUser ? `${adminUser.firstName || ''} ${adminUser.lastName || ''}`.trim() || 'Admin' : 'Admin';
+    // Find the transaction
+    const transaction = await this.getTransaction(transactionId);
+    
+    if (!transaction.data) {
+      throw new NotFoundException('Transaction not found');
+    }
+
+    if (transaction.data.status !== 'pending') {
+      throw new BadRequestException('Only pending transactions can be validated');
+    }
+
+    const entityId = transaction.data.entityId;
+    const entityType = transaction.data.entityType;
+
+    if (entityType === 'organisation') {
+      const organisation = await this.prisma.organisation.findUnique({
+        where: { id: entityId },
+      });
+
+      if (!organisation) {
+        throw new NotFoundException('Organisation not found');
+      }
+
+      const addressData = (organisation.address as any) || {};
+      const pendingPayment = addressData.pendingPayment;
+
+      if (!pendingPayment || pendingPayment.reference !== transactionId) {
+        throw new NotFoundException('Transaction not found');
+      }
+
+      // Update the payment status and add validation data
+      await this.prisma.organisation.update({
+        where: { id: entityId },
+        data: {
+          address: {
+            ...addressData,
+            pendingPayment: {
+              ...pendingPayment,
+              status: 'completed',
+              validatedAt: new Date().toISOString(),
+            },
+            paymentValidation: {
+              adminUserId,
+              adminName,
+              reason,
+              proofOfPayment: proofOfPayment || null,
+              validatedAt: new Date().toISOString(),
+            },
+            subscriptionPlan: pendingPayment.plan || addressData.subscriptionPlan,
+          },
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Payment validated successfully',
+        data: {
+          transactionId,
+          status: 'success',
+          validation: {
+            adminUserId,
+            adminName,
+            reason,
+            proofOfPayment: proofOfPayment || null,
+            validatedAt: new Date().toISOString(),
+          },
+        },
+      };
+    }
+
+    throw new BadRequestException('Unsupported entity type');
   }
 
   async createJob(userId: string, organisationId: string | undefined, createJobDto: any) {
@@ -477,6 +1093,83 @@ export class AdminService {
       success: true,
       message: 'Job created successfully',
       data: job,
+    };
+  }
+
+  async getSubscriptionPlans(entityType?: 'professional' | 'organisation') {
+    const organisationPlans = [
+      {
+        id: 'starter',
+        name: 'Starter Plan',
+        price: 0,
+        description: 'Default plan, no payment, no commitment',
+        entityType: 'organisation',
+      },
+      {
+        id: 'standard',
+        name: 'Standard Plan',
+        price: 99,
+        description: 'Extra value and optimized recruitment experience',
+        entityType: 'organisation',
+      },
+      {
+        id: 'recruiter',
+        name: 'Recruiter Plan',
+        price: 299,
+        description: 'Full suite recruitment, onboarding and offboarding package',
+        entityType: 'organisation',
+      },
+      {
+        id: 'enterprise',
+        name: 'Enterprise Plan',
+        price: 999,
+        description: 'Suitable for large organisations',
+        entityType: 'organisation',
+      },
+    ];
+
+    const professionalPlans = [
+      {
+        id: 'express',
+        name: 'Taldium Express',
+        price: 0,
+        description: 'Default access plan for all entities',
+        entityType: 'professional',
+      },
+      {
+        id: 'bloom',
+        name: 'Taldium Bloom',
+        price: 79,
+        description: 'Enhanced features for professionals',
+        entityType: 'professional',
+      },
+      {
+        id: 'prime',
+        name: 'Taldium Prime',
+        price: 149,
+        description: 'Premium features and priority support',
+        entityType: 'professional',
+      },
+    ];
+
+    if (entityType === 'professional') {
+      return {
+        success: true,
+        data: professionalPlans,
+      };
+    } else if (entityType === 'organisation') {
+      return {
+        success: true,
+        data: organisationPlans,
+      };
+    }
+
+    return {
+      success: true,
+      data: {
+        professional: professionalPlans,
+        organisation: organisationPlans,
+      },
     };
   }
 

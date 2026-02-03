@@ -188,6 +188,8 @@ model Professional {
   country           String?
   nationality       String?
   dateOfBirth       DateTime?
+  description       String?
+  socialMedia       Json?
   identityVerified  Boolean   @default(false)
   identityStatus    VerificationStatus @default(not_activated)
   setupCompleted    Boolean   @default(false)
