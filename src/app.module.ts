@@ -13,9 +13,7 @@ import { RegistrationModule } from './app/registration/registration.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-    }),
+    ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     JwtAuthModule,
     AuthModule,

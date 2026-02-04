@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../utility/prisma/prisma.service';
 import { InviteAdminDto } from './dto/invite-admin.dto';
 import { CompleteOnboardingDto } from './dto/complete-onboarding.dto';
