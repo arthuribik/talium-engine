@@ -1,4 +1,9 @@
-import { Injectable, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../utility/prisma/prisma.service';
 import { IdentityVerifyDto } from './dto/identity-verify.dto';
 import { AddEducationDto } from './dto/add-education.dto';
@@ -9,7 +14,11 @@ import { InitiatePaymentDto } from '../organisation/dto/initiate-payment.dto';
 export class ProfessionalService {
   constructor(private prisma: PrismaService) {}
 
-  async verifyIdentity(userId: string, profId: string, identityDto: IdentityVerifyDto) {
+  async verifyIdentity(
+    userId: string,
+    profId: string,
+    identityDto: IdentityVerifyDto,
+  ) {
     // Verify user is professional entity
     const professional = await this.prisma.professional.findUnique({
       where: { id: profId },
@@ -20,7 +29,9 @@ export class ProfessionalService {
     }
 
     if (professional.userId !== userId) {
-      throw new ForbiddenException('You do not have permission to update this profile');
+      throw new ForbiddenException(
+        'You do not have permission to update this profile',
+      );
     }
 
     // Validate date of birth (must be 16+ years old)
@@ -92,7 +103,11 @@ export class ProfessionalService {
     };
   }
 
-  async addEducation(userId: string, profId: string, educationDto: AddEducationDto) {
+  async addEducation(
+    userId: string,
+    profId: string,
+    educationDto: AddEducationDto,
+  ) {
     // Verify user is professional entity
     const professional = await this.prisma.professional.findUnique({
       where: { id: profId },
@@ -103,7 +118,9 @@ export class ProfessionalService {
     }
 
     if (professional.userId !== userId) {
-      throw new ForbiddenException('You do not have permission to update this profile');
+      throw new ForbiddenException(
+        'You do not have permission to update this profile',
+      );
     }
 
     // Create education record
@@ -133,7 +150,11 @@ export class ProfessionalService {
     };
   }
 
-  async addExperience(userId: string, profId: string, experienceDto: AddExperienceDto) {
+  async addExperience(
+    userId: string,
+    profId: string,
+    experienceDto: AddExperienceDto,
+  ) {
     // Verify user is professional entity
     const professional = await this.prisma.professional.findUnique({
       where: { id: profId },
@@ -144,7 +165,9 @@ export class ProfessionalService {
     }
 
     if (professional.userId !== userId) {
-      throw new ForbiddenException('You do not have permission to update this profile');
+      throw new ForbiddenException(
+        'You do not have permission to update this profile',
+      );
     }
 
     // Create work experience record
@@ -177,7 +200,11 @@ export class ProfessionalService {
     };
   }
 
-  async updateEducation(userId: string, educationId: string, educationDto: AddEducationDto) {
+  async updateEducation(
+    userId: string,
+    educationId: string,
+    educationDto: AddEducationDto,
+  ) {
     const education = await this.prisma.education.findUnique({
       where: { id: educationId },
       include: { professional: true },
@@ -188,7 +215,9 @@ export class ProfessionalService {
     }
 
     if (education.professional.userId !== userId) {
-      throw new ForbiddenException('You do not have permission to update this education record');
+      throw new ForbiddenException(
+        'You do not have permission to update this education record',
+      );
     }
 
     const updated = await this.prisma.education.update({
@@ -216,7 +245,11 @@ export class ProfessionalService {
     };
   }
 
-  async updateExperience(userId: string, experienceId: string, experienceDto: AddExperienceDto) {
+  async updateExperience(
+    userId: string,
+    experienceId: string,
+    experienceDto: AddExperienceDto,
+  ) {
     const experience = await this.prisma.workExperience.findUnique({
       where: { id: experienceId },
       include: { professional: true },
@@ -227,7 +260,9 @@ export class ProfessionalService {
     }
 
     if (experience.professional.userId !== userId) {
-      throw new ForbiddenException('You do not have permission to update this experience record');
+      throw new ForbiddenException(
+        'You do not have permission to update this experience record',
+      );
     }
 
     const updated = await this.prisma.workExperience.update({
@@ -269,7 +304,9 @@ export class ProfessionalService {
     }
 
     if (education.professional.userId !== userId) {
-      throw new ForbiddenException('You do not have permission to delete this education record');
+      throw new ForbiddenException(
+        'You do not have permission to delete this education record',
+      );
     }
 
     await this.prisma.education.delete({
@@ -293,7 +330,9 @@ export class ProfessionalService {
     }
 
     if (experience.professional.userId !== userId) {
-      throw new ForbiddenException('You do not have permission to delete this experience record');
+      throw new ForbiddenException(
+        'You do not have permission to delete this experience record',
+      );
     }
 
     await this.prisma.workExperience.delete({
@@ -322,7 +361,9 @@ export class ProfessionalService {
     }
 
     if (professional.userId !== userId) {
-      throw new ForbiddenException('You do not have permission to view this profile');
+      throw new ForbiddenException(
+        'You do not have permission to view this profile',
+      );
     }
 
     // Calculate profile completeness
@@ -333,7 +374,10 @@ export class ProfessionalService {
     // Identity section (30%)
     const identityWeight = 30;
     totalWeight += identityWeight;
-    if (professional.identityVerification && professional.identityStatus === 'verified') {
+    if (
+      professional.identityVerification &&
+      professional.identityStatus === 'verified'
+    ) {
       sections.identity = {
         completed: true,
         status: 'verified',
@@ -352,7 +396,8 @@ export class ProfessionalService {
     const educationWeight = 25;
     totalWeight += educationWeight;
     if (professional.education && professional.education.length > 0) {
-      const latestEducation = professional.education[professional.education.length - 1];
+      const latestEducation =
+        professional.education[professional.education.length - 1];
       sections.education = {
         completed: true,
         status: latestEducation.verificationStatus,
@@ -373,7 +418,8 @@ export class ProfessionalService {
     const experienceWeight = 25;
     totalWeight += experienceWeight;
     if (professional.workExperience && professional.workExperience.length > 0) {
-      const latestExperience = professional.workExperience[professional.workExperience.length - 1];
+      const latestExperience =
+        professional.workExperience[professional.workExperience.length - 1];
       sections.experience = {
         completed: true,
         status: latestExperience.verificationStatus,
@@ -400,7 +446,9 @@ export class ProfessionalService {
       weight: additionalWeight,
     };
 
-    const profileCompleteness = Math.round((completedWeight / totalWeight) * 100);
+    const profileCompleteness = Math.round(
+      (completedWeight / totalWeight) * 100,
+    );
 
     return {
       success: true,
@@ -461,7 +509,7 @@ export class ProfessionalService {
     }
 
     const updateData: any = {};
-    
+
     if (updateDto.country !== undefined) {
       updateData.country = updateDto.country;
     }
@@ -559,7 +607,9 @@ export class ProfessionalService {
       ...applications.map((app) => ({
         id: app.id,
         type: 'application',
-        organisationName: app.job.organisation.companyName || `${app.job.organisation.user.firstName} ${app.job.organisation.user.lastName}`,
+        organisationName:
+          app.job.organisation.companyName ||
+          `${app.job.organisation.user.firstName} ${app.job.organisation.user.lastName}`,
         status: app.status,
         accessType: 'application',
         date: app.createdAt,
@@ -568,7 +618,9 @@ export class ProfessionalService {
       ...hiredApplications.map((app) => ({
         id: `hired-${app.id}`,
         type: 'hired',
-        organisationName: app.job.organisation.companyName || `${app.job.organisation.user.firstName} ${app.job.organisation.user.lastName}`,
+        organisationName:
+          app.job.organisation.companyName ||
+          `${app.job.organisation.user.firstName} ${app.job.organisation.user.lastName}`,
         status: 'active',
         accessType: 'employment',
         date: app.updatedAt,
@@ -682,7 +734,9 @@ export class ProfessionalService {
           id: app.id,
           jobId: app.jobId,
           jobTitle: app.job.jobTitle,
-          companyName: app.job.organisation.companyName || `${app.job.organisation.user.firstName} ${app.job.organisation.user.lastName}`,
+          companyName:
+            app.job.organisation.companyName ||
+            `${app.job.organisation.user.firstName} ${app.job.organisation.user.lastName}`,
           location: app.job.location,
           status: app.status,
           appliedAt: app.createdAt,
@@ -799,10 +853,13 @@ export class ProfessionalService {
         status: 'active',
         professionalId: professional.id,
         professionalName: `${professional.user.firstName} ${professional.user.lastName}`,
-        paymentMethod: subscriptionPlan !== 'express' ? {
-          type: 'card',
-          last4: '4242', // Placeholder - would come from payment service
-        } : null,
+        paymentMethod:
+          subscriptionPlan !== 'express'
+            ? {
+                type: 'card',
+                last4: '4242', // Placeholder - would come from payment service
+              }
+            : null,
       },
     };
   }
@@ -859,9 +916,11 @@ export class ProfessionalService {
 
   async updateSubscription(userId: string, plan: string) {
     const validPlans = ['free', 'express', 'bloom', 'prime'];
-    
+
     if (!validPlans.includes(plan)) {
-      throw new BadRequestException(`Invalid plan. Must be one of: ${validPlans.join(', ')}`);
+      throw new BadRequestException(
+        `Invalid plan. Must be one of: ${validPlans.join(', ')}`,
+      );
     }
 
     const professional = await this.prisma.professional.findUnique({
@@ -890,9 +949,11 @@ export class ProfessionalService {
 
   async initiatePayment(userId: string, paymentDto: InitiatePaymentDto) {
     const validPlans = ['express', 'bloom', 'prime'];
-    
+
     if (!validPlans.includes(paymentDto.plan)) {
-      throw new BadRequestException(`Invalid plan. Must be one of: ${validPlans.join(', ')}`);
+      throw new BadRequestException(
+        `Invalid plan. Must be one of: ${validPlans.join(', ')}`,
+      );
     }
 
     const professional = await this.prisma.professional.findUnique({
@@ -949,4 +1010,3 @@ export class ProfessionalService {
     };
   }
 }
-

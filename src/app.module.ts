@@ -29,4 +29,3 @@ import { RegistrationModule } from './app/registration/registration.module';
   providers: [AppService],
 })
 export class AppModule {}
-

@@ -1,7 +1,29 @@
-import { Controller, Post, Get, Body, Param, Query, BadRequestException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Param,
+  Query,
+  BadRequestException,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { RegistrationService } from './registration.service';
-import { Step1Dto, Step2Dto, Step3Dto, Step4Dto, Step5Dto, Step7Dto, Step8Dto } from '../auth/dto/registration-step.dto';
+import {
+  Step1Dto,
+  Step2Dto,
+  Step3Dto,
+  Step4Dto,
+  Step5Dto,
+  Step7Dto,
+  Step8Dto,
+} from '../auth/dto/registration-step.dto';
 import { RegistrationStepDto } from './dto/registration-step.dto';
 
 @ApiTags('Registration')
@@ -65,7 +87,9 @@ export class RegistrationController {
   }
 
   @Post('step/7')
-  @ApiOperation({ summary: 'Save step 7 data (Organisation Details for non-registered)' })
+  @ApiOperation({
+    summary: 'Save step 7 data (Organisation Details for non-registered)',
+  })
   @ApiResponse({ status: 201, description: 'Step 7 data saved successfully' })
   async saveStep7(@Body() data: Step7Dto, @Query('id') id?: string) {
     return this.registrationService.saveStep7(id || null, data);
@@ -84,13 +108,20 @@ export class RegistrationController {
   }
 
   @Post('step')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Save registration step data (unified endpoint)',
-    description: 'Single endpoint to save data for any registration step. The step number determines which fields are required. Steps 1 and 7 can create new registrations (ID optional), while other steps require an existing registration ID.'
+    description:
+      'Single endpoint to save data for any registration step. The step number determines which fields are required. Steps 1 and 7 can create new registrations (ID optional), while other steps require an existing registration ID.',
   })
   @ApiResponse({ status: 201, description: 'Step data saved successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid step number or missing required fields' })
-  @ApiResponse({ status: 404, description: 'Registration not found (for steps requiring ID)' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid step number or missing required fields',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Registration not found (for steps requiring ID)',
+  })
   async saveStep(@Body() dto: RegistrationStepDto) {
     return this.registrationService.saveStep(dto);
   }
@@ -98,7 +129,10 @@ export class RegistrationController {
   @Get(':id')
   @ApiOperation({ summary: 'Get registration progress' })
   @ApiParam({ name: 'id', description: 'Registration ID' })
-  @ApiResponse({ status: 200, description: 'Registration data retrieved successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Registration data retrieved successfully',
+  })
   @ApiResponse({ status: 404, description: 'Registration not found' })
   async getRegistration(@Param('id') id: string) {
     return this.registrationService.getRegistration(id);

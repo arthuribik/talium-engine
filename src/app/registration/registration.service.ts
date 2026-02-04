@@ -1,6 +1,18 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../utility/prisma/prisma.service';
-import { Step1Dto, Step2Dto, Step3Dto, Step4Dto, Step5Dto, Step7Dto, Step8Dto } from '../auth/dto/registration-step.dto';
+import {
+  Step1Dto,
+  Step2Dto,
+  Step3Dto,
+  Step4Dto,
+  Step5Dto,
+  Step7Dto,
+  Step8Dto,
+} from '../auth/dto/registration-step.dto';
 import { RegistrationStepDto } from './dto/registration-step.dto';
 
 @Injectable()
@@ -11,10 +23,13 @@ export class RegistrationService {
 
   constructor(private prisma: PrismaService) {}
 
-  async saveStep1(registrationId: string | null, data: Step1Dto): Promise<{ id: string; step: number; data: any }> {
+  async saveStep1(
+    registrationId: string | null,
+    data: Step1Dto,
+  ): Promise<{ id: string; step: number; data: any }> {
     const id = registrationId || this.generateId();
     const existing = this.registrationStore.get(id) || {};
-    
+
     this.registrationStore.set(id, {
       ...existing,
       step1: data,
@@ -29,9 +44,12 @@ export class RegistrationService {
     };
   }
 
-  async saveStep2(registrationId: string, data: Step2Dto): Promise<{ id: string; step: number; data: any }> {
+  async saveStep2(
+    registrationId: string,
+    data: Step2Dto,
+  ): Promise<{ id: string; step: number; data: any }> {
     const existing = this.getRegistrationSync(registrationId);
-    
+
     this.registrationStore.set(registrationId, {
       ...existing,
       step2: data,
@@ -46,9 +64,12 @@ export class RegistrationService {
     };
   }
 
-  async saveStep3(registrationId: string, data: Step3Dto): Promise<{ id: string; step: number; data: any }> {
+  async saveStep3(
+    registrationId: string,
+    data: Step3Dto,
+  ): Promise<{ id: string; step: number; data: any }> {
     const existing = this.getRegistrationSync(registrationId);
-    
+
     this.registrationStore.set(registrationId, {
       ...existing,
       step3: data,
@@ -63,9 +84,12 @@ export class RegistrationService {
     };
   }
 
-  async saveStep4(registrationId: string, data: Step4Dto): Promise<{ id: string; step: number; data: any }> {
+  async saveStep4(
+    registrationId: string,
+    data: Step4Dto,
+  ): Promise<{ id: string; step: number; data: any }> {
     const existing = this.getRegistrationSync(registrationId);
-    
+
     this.registrationStore.set(registrationId, {
       ...existing,
       step4: data,
@@ -80,9 +104,12 @@ export class RegistrationService {
     };
   }
 
-  async saveStep5(registrationId: string, data: Step5Dto): Promise<{ id: string; step: number; data: any }> {
+  async saveStep5(
+    registrationId: string,
+    data: Step5Dto,
+  ): Promise<{ id: string; step: number; data: any }> {
     const existing = this.getRegistrationSync(registrationId);
-    
+
     this.registrationStore.set(registrationId, {
       ...existing,
       step5: data,
@@ -97,10 +124,13 @@ export class RegistrationService {
     };
   }
 
-  async saveStep7(registrationId: string | null, data: Step7Dto): Promise<{ id: string; step: number; data: any }> {
+  async saveStep7(
+    registrationId: string | null,
+    data: Step7Dto,
+  ): Promise<{ id: string; step: number; data: any }> {
     const id = registrationId || this.generateId();
     const existing = this.registrationStore.get(id) || {};
-    
+
     this.registrationStore.set(id, {
       ...existing,
       step7: data,
@@ -115,9 +145,12 @@ export class RegistrationService {
     };
   }
 
-  async saveStep8(registrationId: string, data: Step8Dto): Promise<{ id: string; step: number; data: any }> {
+  async saveStep8(
+    registrationId: string,
+    data: Step8Dto,
+  ): Promise<{ id: string; step: number; data: any }> {
     const existing = this.getRegistrationSync(registrationId);
-    
+
     this.registrationStore.set(registrationId, {
       ...existing,
       step8: data,
@@ -152,7 +185,7 @@ export class RegistrationService {
   cleanupOldRegistrations() {
     const now = new Date();
     const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    
+
     for (const [id, data] of this.registrationStore.entries()) {
       if (data.updatedAt && new Date(data.updatedAt) < oneDayAgo) {
         this.registrationStore.delete(id);
@@ -165,28 +198,34 @@ export class RegistrationService {
   }
 
   // Unified method to save any step
-  async saveStep(dto: RegistrationStepDto): Promise<{ id: string; step: number; data: any }> {
+  async saveStep(
+    dto: RegistrationStepDto,
+  ): Promise<{ id: string; step: number; data: any }> {
     const { step, id, ...data } = dto;
-    
+
     // Determine registration ID
     let registrationId = id;
-    
+
     // Steps 1 and 7 can create new registrations
     if (!registrationId && (step === 1 || step === 7)) {
       registrationId = this.generateId();
     }
-    
+
     // For other steps, ID is required
     if (!registrationId) {
-      throw new BadRequestException('Registration ID is required for this step');
+      throw new BadRequestException(
+        'Registration ID is required for this step',
+      );
     }
-    
+
     // Get existing registration or create new
-    const existing = registrationId ? (this.registrationStore.get(registrationId) || {}) : {};
-    
+    const existing = registrationId
+      ? this.registrationStore.get(registrationId) || {}
+      : {};
+
     // Prepare step-specific data
     let stepData: any = {};
-    
+
     switch (step) {
       case 1:
         stepData = { isRegistered: data.isRegistered };
@@ -247,7 +286,7 @@ export class RegistrationService {
       default:
         throw new BadRequestException(`Invalid step number: ${step}`);
     }
-    
+
     // Update registration store
     this.registrationStore.set(registrationId, {
       ...existing,
@@ -255,7 +294,7 @@ export class RegistrationService {
       currentStep: step,
       updatedAt: new Date(),
     });
-    
+
     return {
       id: registrationId,
       step,
@@ -263,4 +302,3 @@ export class RegistrationService {
     };
   }
 }
-

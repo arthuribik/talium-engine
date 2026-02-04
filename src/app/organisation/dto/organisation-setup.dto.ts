@@ -1,4 +1,15 @@
-import { IsString, IsNotEmpty, IsOptional, IsInt, IsEnum, IsUrl, Min, Max, IsObject, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsInt,
+  IsEnum,
+  IsUrl,
+  Min,
+  Max,
+  IsObject,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -78,4 +89,3 @@ export class OrganisationSetupDto {
   @IsOptional()
   description?: string;
 }
-

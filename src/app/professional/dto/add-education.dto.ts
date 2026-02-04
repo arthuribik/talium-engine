@@ -1,4 +1,13 @@
-import { IsString, IsNotEmpty, IsEnum, IsOptional, IsNumber, IsBoolean, IsArray, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsEnum,
+  IsOptional,
+  IsNumber,
+  IsBoolean,
+  IsArray,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -20,8 +29,26 @@ class VerificationDocumentDto {
 }
 
 export class AddEducationDto {
-  @ApiProperty({ enum: ['high_school', 'associate', 'bachelor', 'master', 'doctorate', 'certificate', 'diploma'] })
-  @IsEnum(['high_school', 'associate', 'bachelor', 'master', 'doctorate', 'certificate', 'diploma'])
+  @ApiProperty({
+    enum: [
+      'high_school',
+      'associate',
+      'bachelor',
+      'master',
+      'doctorate',
+      'certificate',
+      'diploma',
+    ],
+  })
+  @IsEnum([
+    'high_school',
+    'associate',
+    'bachelor',
+    'master',
+    'doctorate',
+    'certificate',
+    'diploma',
+  ])
   @IsNotEmpty()
   levelOfEducation: string;
 
@@ -82,4 +109,3 @@ export class AddEducationDto {
   @Type(() => VerificationDocumentDto)
   verificationDocuments?: VerificationDocumentDto[];
 }
-

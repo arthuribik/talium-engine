@@ -1,4 +1,10 @@
-import { Injectable, ForbiddenException, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  ConflictException,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -21,7 +27,10 @@ export class AdminService {
       include: { adminProfile: true },
     });
 
-    if (!requester?.adminProfile || requester.adminProfile.role !== 'super_admin') {
+    if (
+      !requester?.adminProfile ||
+      requester.adminProfile.role !== 'super_admin'
+    ) {
       throw new ForbiddenException('Only super admins can invite other admins');
     }
 
@@ -80,7 +89,9 @@ export class AdminService {
   }
 
   async completeOnboarding(completeOnboardingDto: CompleteOnboardingDto) {
-    if (completeOnboardingDto.password !== completeOnboardingDto.confirmPassword) {
+    if (
+      completeOnboardingDto.password !== completeOnboardingDto.confirmPassword
+    ) {
       throw new BadRequestException('Passwords do not match');
     }
 
@@ -100,7 +111,10 @@ export class AdminService {
     }
 
     // Hash password
-    const hashedPassword = await bcrypt.hash(completeOnboardingDto.password, 10);
+    const hashedPassword = await bcrypt.hash(
+      completeOnboardingDto.password,
+      10,
+    );
 
     // Update user
     const user = await this.prisma.user.update({
@@ -131,8 +145,11 @@ export class AdminService {
 
     const accessToken = this.jwtService.sign(payload);
     const refreshToken = this.jwtService.sign(payload, {
-      secret: this.configService.get<string>('REFRESH_TOKEN_SECRET') || 'refresh-secret',
-      expiresIn: this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN') || '7d',
+      secret:
+        this.configService.get<string>('REFRESH_TOKEN_SECRET') ||
+        'refresh-secret',
+      expiresIn:
+        this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN') || '7d',
     });
 
     // TODO: Send welcome email
@@ -165,7 +182,9 @@ export class AdminService {
     });
 
     if (existingSuperAdmin) {
-      throw new ForbiddenException('Super admin already exists. Use invite endpoint instead.');
+      throw new ForbiddenException(
+        'Super admin already exists. Use invite endpoint instead.',
+      );
     }
 
     // Validate passwords match
@@ -221,7 +240,13 @@ export class AdminService {
   async getDashboardStats() {
     try {
       // Overall Stats
-      const [totalUsers, totalOrganisations, totalProfessionals, totalJobs, totalApplications] = await Promise.all([
+      const [
+        totalUsers,
+        totalOrganisations,
+        totalProfessionals,
+        totalJobs,
+        totalApplications,
+      ] = await Promise.all([
         this.prisma.user.count().catch(() => 0),
         this.prisma.organisation.count().catch(() => 0),
         this.prisma.professional.count().catch(() => 0),
@@ -229,22 +254,28 @@ export class AdminService {
         this.prisma.jobApplication.count().catch(() => 0),
       ]);
 
-      const verifiedProfessionals = await this.prisma.professional.count({
-        where: { identityStatus: 'verified' },
-      }).catch(() => 0);
+      const verifiedProfessionals = await this.prisma.professional
+        .count({
+          where: { identityStatus: 'verified' },
+        })
+        .catch(() => 0);
 
-      const verifiedOrganisations = await this.prisma.organisation.count({
-        where: { verificationStatus: 'verified' },
-      }).catch(() => 0);
+      const verifiedOrganisations = await this.prisma.organisation
+        .count({
+          where: { verificationStatus: 'verified' },
+        })
+        .catch(() => 0);
 
       // Organisation Entities Analytics
-      const activeOrganisations = await this.prisma.organisation.count({
-        where: {
-          user: {
-            status: 'ACTIVE',
+      const activeOrganisations = await this.prisma.organisation
+        .count({
+          where: {
+            user: {
+              status: 'ACTIVE',
+            },
           },
-        },
-      }).catch(() => 0);
+        })
+        .catch(() => 0);
 
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -255,129 +286,178 @@ export class AdminService {
       const thisYear = new Date(today);
       thisYear.setFullYear(today.getFullYear() - 1);
 
-      const newOrganisationsToday = await this.prisma.organisation.count({
-        where: {
-          createdAt: { gte: today },
-        },
-      }).catch(() => 0);
+      const newOrganisationsToday = await this.prisma.organisation
+        .count({
+          where: {
+            createdAt: { gte: today },
+          },
+        })
+        .catch(() => 0);
 
-      const newOrganisationsThisWeek = await this.prisma.organisation.count({
-        where: {
-          createdAt: { gte: thisWeek },
-        },
-      }).catch(() => 0);
+      const newOrganisationsThisWeek = await this.prisma.organisation
+        .count({
+          where: {
+            createdAt: { gte: thisWeek },
+          },
+        })
+        .catch(() => 0);
 
-      const newOrganisationsThisMonth = await this.prisma.organisation.count({
-        where: {
-          createdAt: { gte: thisMonth },
-        },
-      }).catch(() => 0);
+      const newOrganisationsThisMonth = await this.prisma.organisation
+        .count({
+          where: {
+            createdAt: { gte: thisMonth },
+          },
+        })
+        .catch(() => 0);
 
-      const newOrganisationsThisYear = await this.prisma.organisation.count({
-        where: {
-          createdAt: { gte: thisYear },
-        },
-      }).catch(() => 0);
+      const newOrganisationsThisYear = await this.prisma.organisation
+        .count({
+          where: {
+            createdAt: { gte: thisYear },
+          },
+        })
+        .catch(() => 0);
 
-      const pendingActivationOrganisations = await this.prisma.organisation.count({
-        where: {
-          verificationStatus: { in: ['pending', 'under_review', 'not_activated'] },
-        },
-      }).catch(() => 0);
+      const pendingActivationOrganisations = await this.prisma.organisation
+        .count({
+          where: {
+            verificationStatus: {
+              in: ['pending', 'under_review', 'not_activated'],
+            },
+          },
+        })
+        .catch(() => 0);
 
       // Professional Entities Analytics
-      const activatedProfessionals = await this.prisma.professional.count({
-        where: {
-          user: {
-            status: 'ACTIVE',
+      const activatedProfessionals = await this.prisma.professional
+        .count({
+          where: {
+            user: {
+              status: 'ACTIVE',
+            },
           },
-        },
-      }).catch(() => 0);
+        })
+        .catch(() => 0);
 
-      const verifiedGovernmentIds = await this.prisma.identityVerification.count({
-        where: {
-          status: 'verified',
-        },
-      }).catch(() => 0);
+      const verifiedGovernmentIds = await this.prisma.identityVerification
+        .count({
+          where: {
+            status: 'verified',
+          },
+        })
+        .catch(() => 0);
 
-      const totalAddressInfo = await this.prisma.professional.count({
-        where: {
-          country: { not: null },
-        },
-      }).catch(() => 0);
+      const totalAddressInfo = await this.prisma.professional
+        .count({
+          where: {
+            country: { not: null },
+          },
+        })
+        .catch(() => 0);
 
-      const verifiedAddressInfo = await this.prisma.professional.count({
-        where: {
-          country: { not: null },
-          identityStatus: 'verified',
-        },
-      }).catch(() => 0);
+      const verifiedAddressInfo = await this.prisma.professional
+        .count({
+          where: {
+            country: { not: null },
+            identityStatus: 'verified',
+          },
+        })
+        .catch(() => 0);
 
-      const graduateCertificates = await this.prisma.education.count({
-        where: {
-          levelOfEducation: { in: ['bachelor', 'master', 'doctorate'] },
-        },
-      }).catch(() => 0);
+      const graduateCertificates = await this.prisma.education
+        .count({
+          where: {
+            levelOfEducation: { in: ['bachelor', 'master', 'doctorate'] },
+          },
+        })
+        .catch(() => 0);
 
       // Jobs Analytics
-      const activeJobRoles = await this.prisma.job.count({
-        where: {
-          status: 'published',
-        },
-      }).catch(() => 0);
+      const activeJobRoles = await this.prisma.job
+        .count({
+          where: {
+            status: 'published',
+          },
+        })
+        .catch(() => 0);
 
-      const totalHires = await this.prisma.jobApplication.count({
-        where: {
-          status: 'hired',
-        },
-      }).catch(() => 0);
+      const totalHires = await this.prisma.jobApplication
+        .count({
+          where: {
+            status: 'hired',
+          },
+        })
+        .catch(() => 0);
 
       // Verifications - Professional Entity
-      const professionalIdVerificationRequests = await this.prisma.identityVerification.count().catch(() => 0);
-      const professionalVerifiedIds = await this.prisma.identityVerification.count({
-        where: { status: 'verified' },
-      }).catch(() => 0);
+      const professionalIdVerificationRequests =
+        await this.prisma.identityVerification.count().catch(() => 0);
+      const professionalVerifiedIds = await this.prisma.identityVerification
+        .count({
+          where: { status: 'verified' },
+        })
+        .catch(() => 0);
 
-      const professionalAddressVerificationRequests = await this.prisma.professional.count({
-        where: {
-          country: { not: null },
-        },
-      }).catch(() => 0);
-      const professionalVerifiedAddress = await this.prisma.professional.count({
-        where: {
-          country: { not: null },
-          identityStatus: 'verified',
-        },
-      }).catch(() => 0);
+      const professionalAddressVerificationRequests =
+        await this.prisma.professional
+          .count({
+            where: {
+              country: { not: null },
+            },
+          })
+          .catch(() => 0);
+      const professionalVerifiedAddress = await this.prisma.professional
+        .count({
+          where: {
+            country: { not: null },
+            identityStatus: 'verified',
+          },
+        })
+        .catch(() => 0);
 
-      const professionalEducationVerificationRequests = await this.prisma.education.count().catch(() => 0);
-      const professionalVerifiedEducation = await this.prisma.education.count({
-        where: { verificationStatus: 'verified' },
-      }).catch(() => 0);
+      const professionalEducationVerificationRequests =
+        await this.prisma.education.count().catch(() => 0);
+      const professionalVerifiedEducation = await this.prisma.education
+        .count({
+          where: { verificationStatus: 'verified' },
+        })
+        .catch(() => 0);
 
-      const professionalWorkExperienceVerificationRequests = await this.prisma.workExperience.count().catch(() => 0);
-      const professionalVerifiedWorkExperience = await this.prisma.workExperience.count({
-        where: { verificationStatus: 'verified' },
-      }).catch(() => 0);
+      const professionalWorkExperienceVerificationRequests =
+        await this.prisma.workExperience.count().catch(() => 0);
+      const professionalVerifiedWorkExperience =
+        await this.prisma.workExperience
+          .count({
+            where: { verificationStatus: 'verified' },
+          })
+          .catch(() => 0);
 
       // Verifications - Organisation Entity
-      const organisationVerificationRequests = await this.prisma.organisationVerification.count().catch(() => 0);
-      const organisationVerifiedIds = await this.prisma.organisationVerification.count({
-        where: { status: 'verified' },
-      }).catch(() => 0);
+      const organisationVerificationRequests =
+        await this.prisma.organisationVerification.count().catch(() => 0);
+      const organisationVerifiedIds = await this.prisma.organisationVerification
+        .count({
+          where: { status: 'verified' },
+        })
+        .catch(() => 0);
 
       // For organisation address verification, we'll use organisations with address field
-      const organisationAddressVerificationRequests = await this.prisma.organisation.count({
-        where: {
-          address: { not: null },
-        },
-      }).catch(() => 0);
-      const organisationVerifiedAddress = await this.prisma.organisation.count({
-        where: {
-          address: { not: null },
-          verificationStatus: 'verified',
-        },
-      }).catch(() => 0);
+      const organisationAddressVerificationRequests =
+        await this.prisma.organisation
+          .count({
+            where: {
+              address: { not: null },
+            },
+          })
+          .catch(() => 0);
+      const organisationVerifiedAddress = await this.prisma.organisation
+        .count({
+          where: {
+            address: { not: null },
+            verificationStatus: 'verified',
+          },
+        })
+        .catch(() => 0);
 
       // Organisation education and work experience verifications (if they exist in future)
       const organisationEducationVerificationRequests = 0;
@@ -409,7 +489,11 @@ export class AdminService {
           totalApplications: totalApplications || 0,
           verifiedProfessionals: verifiedProfessionals || 0,
           verifiedOrganisations: verifiedOrganisations || 0,
-          pendingVerifications: (totalProfessionals - verifiedProfessionals + totalOrganisations - verifiedOrganisations) || 0,
+          pendingVerifications:
+            totalProfessionals -
+              verifiedProfessionals +
+              totalOrganisations -
+              verifiedOrganisations || 0,
 
           // Organisation Entities
           organisationEntities: {
@@ -446,11 +530,14 @@ export class AdminService {
           professionalVerifications: {
             idVerificationRequests: professionalIdVerificationRequests || 0,
             verifiedIds: professionalVerifiedIds || 0,
-            addressVerificationRequests: professionalAddressVerificationRequests || 0,
+            addressVerificationRequests:
+              professionalAddressVerificationRequests || 0,
             verifiedAddress: professionalVerifiedAddress || 0,
-            educationVerificationRequests: professionalEducationVerificationRequests || 0,
+            educationVerificationRequests:
+              professionalEducationVerificationRequests || 0,
             verifiedEducation: professionalVerifiedEducation || 0,
-            workExperienceVerificationRequests: professionalWorkExperienceVerificationRequests || 0,
+            workExperienceVerificationRequests:
+              professionalWorkExperienceVerificationRequests || 0,
             verifiedWorkExperience: professionalVerifiedWorkExperience || 0,
           },
 
@@ -458,11 +545,14 @@ export class AdminService {
           organisationVerifications: {
             idVerificationRequests: organisationVerificationRequests || 0,
             verifiedIds: organisationVerifiedIds || 0,
-            addressVerificationRequests: organisationAddressVerificationRequests || 0,
+            addressVerificationRequests:
+              organisationAddressVerificationRequests || 0,
             verifiedAddress: organisationVerifiedAddress || 0,
-            educationVerificationRequests: organisationEducationVerificationRequests || 0,
+            educationVerificationRequests:
+              organisationEducationVerificationRequests || 0,
             verifiedEducation: organisationVerifiedEducation || 0,
-            workExperienceVerificationRequests: organisationWorkExperienceVerificationRequests || 0,
+            workExperienceVerificationRequests:
+              organisationWorkExperienceVerificationRequests || 0,
             verifiedWorkExperience: organisationVerifiedWorkExperience || 0,
           },
 
@@ -501,7 +591,12 @@ export class AdminService {
           organisationEntities: {
             totalCreated: 0,
             totalActive: 0,
-            newOrganisations: { today: 0, thisWeek: 0, thisMonth: 0, yearToDate: 0 },
+            newOrganisations: {
+              today: 0,
+              thisWeek: 0,
+              thisMonth: 0,
+              yearToDate: 0,
+            },
             pendingActivation: 0,
           },
           professionalEntities: {
@@ -739,9 +834,13 @@ export class AdminService {
     };
   }
 
-  async getAllTransactions(page: number = 1, limit: number = 20, status: string = 'all') {
+  async getAllTransactions(
+    page: number = 1,
+    limit: number = 20,
+    status: string = 'all',
+  ) {
     const skip = (page - 1) * limit;
-    
+
     // Fetch all organisations with payment data
     const organisations = await this.prisma.organisation.findMany({
       include: {
@@ -781,19 +880,21 @@ export class AdminService {
       // If there's a pending payment, add it as a transaction
       if (pendingPayment) {
         const transactionStatus = pendingPayment.status || 'pending';
-        
+
         // Only include if status matches filter
         if (status === 'all' || status === transactionStatus) {
           allTransactions.push({
             id: pendingPayment.reference || `org-${org.id}-${Date.now()}`,
             amount: pendingPayment.amount || 0,
             currency: 'USD',
-            status: transactionStatus === 'completed' ? 'success' : transactionStatus,
+            status:
+              transactionStatus === 'completed' ? 'success' : transactionStatus,
             type: 'subscription',
             description: `Subscription payment for ${pendingPayment.plan || subscriptionPlan} plan`,
             entityType: 'organisation',
             entityId: org.id,
-            entityName: org.companyName || `${org.user.firstName} ${org.user.lastName}`,
+            entityName:
+              org.companyName || `${org.user.firstName} ${org.user.lastName}`,
             plan: pendingPayment.plan || subscriptionPlan,
             billingCycle: pendingPayment.billingCycle || 'monthly',
             createdAt: pendingPayment.initiatedAt || org.createdAt,
@@ -809,7 +910,7 @@ export class AdminService {
       // If subscription plan is set and not starter, consider it a successful transaction
       if (subscriptionPlan !== 'starter' && !pendingPayment) {
         const transactionStatus = 'success';
-        
+
         if (status === 'all' || status === transactionStatus) {
           // Get plan pricing
           const planPricing: { [key: string]: number } = {
@@ -828,7 +929,8 @@ export class AdminService {
             description: `Active subscription: ${subscriptionPlan} plan`,
             entityType: 'organisation',
             entityId: org.id,
-            entityName: org.companyName || `${org.user.firstName} ${org.user.lastName}`,
+            entityName:
+              org.companyName || `${org.user.firstName} ${org.user.lastName}`,
             plan: subscriptionPlan,
             billingCycle: 'monthly',
             createdAt: org.updatedAt || org.createdAt,
@@ -847,7 +949,10 @@ export class AdminService {
     // For now, we focus on organisation transactions which are actively used
 
     // Sort by creation date (newest first)
-    allTransactions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    allTransactions.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
 
     // Apply pagination
     const total = allTransactions.length;
@@ -892,19 +997,21 @@ export class AdminService {
       // Check if this is the transaction we're looking for
       if (pendingPayment && pendingPayment.reference === transactionId) {
         const transactionStatus = pendingPayment.status || 'pending';
-        
+
         return {
           success: true,
           data: {
             id: transactionId,
             amount: pendingPayment.amount || 0,
             currency: 'USD',
-            status: transactionStatus === 'completed' ? 'success' : transactionStatus,
+            status:
+              transactionStatus === 'completed' ? 'success' : transactionStatus,
             type: 'subscription',
             description: `Subscription payment for ${pendingPayment.plan || subscriptionPlan} plan`,
             entityType: 'organisation',
             entityId: org.id,
-            entityName: org.companyName || `${org.user.firstName} ${org.user.lastName}`,
+            entityName:
+              org.companyName || `${org.user.firstName} ${org.user.lastName}`,
             plan: pendingPayment.plan || subscriptionPlan,
             billingCycle: pendingPayment.billingCycle || 'monthly',
             paymentLink: pendingPayment.paymentLink,
@@ -928,7 +1035,7 @@ export class AdminService {
         };
         const amount = planPricing[subscriptionPlan] || 0;
         const successTransactionId = `org-success-${org.id}`;
-        
+
         if (successTransactionId === transactionId) {
           return {
             success: true,
@@ -941,7 +1048,8 @@ export class AdminService {
               description: `Active subscription: ${subscriptionPlan} plan`,
               entityType: 'organisation',
               entityId: org.id,
-              entityName: org.companyName || `${org.user.firstName} ${org.user.lastName}`,
+              entityName:
+                org.companyName || `${org.user.firstName} ${org.user.lastName}`,
               plan: subscriptionPlan,
               billingCycle: 'monthly',
               createdAt: org.updatedAt || org.createdAt,
@@ -960,7 +1068,12 @@ export class AdminService {
     throw new NotFoundException('Transaction not found');
   }
 
-  async validatePayment(adminUserId: string, transactionId: string, reason: string, proofOfPayment?: string) {
+  async validatePayment(
+    adminUserId: string,
+    transactionId: string,
+    reason: string,
+    proofOfPayment?: string,
+  ) {
     // Fetch admin user to get name
     const adminUser = await this.prisma.user.findUnique({
       where: { id: adminUserId },
@@ -970,16 +1083,21 @@ export class AdminService {
       },
     });
 
-    const adminName = adminUser ? `${adminUser.firstName || ''} ${adminUser.lastName || ''}`.trim() || 'Admin' : 'Admin';
+    const adminName = adminUser
+      ? `${adminUser.firstName || ''} ${adminUser.lastName || ''}`.trim() ||
+        'Admin'
+      : 'Admin';
     // Find the transaction
     const transaction = await this.getTransaction(transactionId);
-    
+
     if (!transaction.data) {
       throw new NotFoundException('Transaction not found');
     }
 
     if (transaction.data.status !== 'pending') {
-      throw new BadRequestException('Only pending transactions can be validated');
+      throw new BadRequestException(
+        'Only pending transactions can be validated',
+      );
     }
 
     const entityId = transaction.data.entityId;
@@ -1019,7 +1137,8 @@ export class AdminService {
               proofOfPayment: proofOfPayment || null,
               validatedAt: new Date().toISOString(),
             },
-            subscriptionPlan: pendingPayment.plan || addressData.subscriptionPlan,
+            subscriptionPlan:
+              pendingPayment.plan || addressData.subscriptionPlan,
           },
         },
       });
@@ -1044,19 +1163,25 @@ export class AdminService {
     throw new BadRequestException('Unsupported entity type');
   }
 
-  async createJob(userId: string, organisationId: string | undefined, createJobDto: any) {
+  async createJob(
+    userId: string,
+    organisationId: string | undefined,
+    createJobDto: any,
+  ) {
     // If no organisationId provided, get the first available organisation
     let orgId = organisationId;
-    
+
     if (!orgId) {
       const firstOrg = await this.prisma.organisation.findFirst({
         orderBy: { createdAt: 'desc' },
       });
-      
+
       if (!firstOrg) {
-        throw new NotFoundException('No organisation found. Please create an organisation first.');
+        throw new NotFoundException(
+          'No organisation found. Please create an organisation first.',
+        );
       }
-      
+
       orgId = firstOrg.id;
     }
 
@@ -1080,7 +1205,9 @@ export class AdminService {
         experienceYears: createJobDto.experienceYears,
         jobLevel: createJobDto.jobLevel,
         pay: createJobDto.pay as any,
-        closingDate: createJobDto.closingDate ? new Date(createJobDto.closingDate) : null,
+        closingDate: createJobDto.closingDate
+          ? new Date(createJobDto.closingDate)
+          : null,
         description: createJobDto.description,
         requirements: createJobDto.requirements || [],
         applyCTA: createJobDto.applyCTA as any,
@@ -1116,7 +1243,8 @@ export class AdminService {
         id: 'recruiter',
         name: 'Recruiter Plan',
         price: 299,
-        description: 'Full suite recruitment, onboarding and offboarding package',
+        description:
+          'Full suite recruitment, onboarding and offboarding package',
         entityType: 'organisation',
       },
       {
@@ -1176,7 +1304,9 @@ export class AdminService {
   async updateJobStatus(jobId: string, status: string) {
     const validStatuses = ['draft', 'published', 'paused', 'closed'];
     if (!validStatuses.includes(status)) {
-      throw new BadRequestException(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
+      throw new BadRequestException(
+        `Invalid status. Must be one of: ${validStatuses.join(', ')}`,
+      );
     }
 
     const job = await this.prisma.job.findUnique({
@@ -1279,10 +1409,22 @@ export class AdminService {
     };
   }
 
-  async updateOrganisationVerificationStatus(orgId: string, status: string, adminUserId: string) {
-    const validStatuses = ['verified', 'under_review', 'pending', 'rejected', 'not_activated'];
+  async updateOrganisationVerificationStatus(
+    orgId: string,
+    status: string,
+    adminUserId: string,
+  ) {
+    const validStatuses = [
+      'verified',
+      'under_review',
+      'pending',
+      'rejected',
+      'not_activated',
+    ];
     if (!validStatuses.includes(status)) {
-      throw new BadRequestException(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
+      throw new BadRequestException(
+        `Invalid status. Must be one of: ${validStatuses.join(', ')}`,
+      );
     }
 
     const organisation = await this.prisma.organisation.findUnique({
@@ -1301,7 +1443,11 @@ export class AdminService {
     });
 
     // Update verification request if it exists
-    if (status === 'verified' || status === 'under_review' || status === 'rejected') {
+    if (
+      status === 'verified' ||
+      status === 'under_review' ||
+      status === 'rejected'
+    ) {
       await this.prisma.organisationVerification.updateMany({
         where: {
           organisationId: orgId,
@@ -1321,7 +1467,12 @@ export class AdminService {
     };
   }
 
-  async approveProfessionalVerification(profId: string, type: 'identity' | 'education' | 'experience', verificationId: string, adminUserId: string) {
+  async approveProfessionalVerification(
+    profId: string,
+    type: 'identity' | 'education' | 'experience',
+    verificationId: string,
+    adminUserId: string,
+  ) {
     if (type === 'identity') {
       await this.prisma.identityVerification.update({
         where: { id: verificationId },
@@ -1366,8 +1517,9 @@ export class AdminService {
   }
 
   private generateToken(): string {
-    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    return (
+      Math.random().toString(36).substring(2, 15) +
+      Math.random().toString(36).substring(2, 15)
+    );
   }
 }
-
-

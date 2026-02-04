@@ -12,7 +12,8 @@ export class CompleteOnboardingDto {
   @IsNotEmpty()
   @MinLength(8)
   @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, {
-    message: 'Password must contain at least one lowercase, one uppercase, one number, and one special character',
+    message:
+      'Password must contain at least one lowercase, one uppercase, one number, and one special character',
   })
   password: string;
 
@@ -21,4 +22,3 @@ export class CompleteOnboardingDto {
   @IsNotEmpty()
   confirmPassword: string;
 }
-

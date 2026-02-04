@@ -14,13 +14,18 @@ export enum SubscriptionPlan {
 }
 
 export class InitiatePaymentDto {
-  @ApiProperty({ enum: SubscriptionPlan, description: 'Subscription plan to subscribe to' })
+  @ApiProperty({
+    enum: SubscriptionPlan,
+    description: 'Subscription plan to subscribe to',
+  })
   @IsEnum(SubscriptionPlan)
   @IsNotEmpty()
   plan: SubscriptionPlan;
 
-  @ApiProperty({ required: false, description: 'Billing cycle (monthly or yearly)' })
+  @ApiProperty({
+    required: false,
+    description: 'Billing cycle (monthly or yearly)',
+  })
   @IsString()
   billingCycle?: string;
 }
-

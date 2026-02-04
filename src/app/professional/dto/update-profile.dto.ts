@@ -1,5 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsUrl, IsObject, ValidateNested, IsDateString } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsUrl,
+  IsObject,
+  ValidateNested,
+  IsDateString,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 class SocialMediaDto {
@@ -62,4 +69,3 @@ export class UpdateProfessionalProfileDto {
   @Type(() => SocialMediaDto)
   socialMedia?: SocialMediaDto;
 }
-

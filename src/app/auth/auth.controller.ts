@@ -1,4 +1,14 @@
-import { Controller, Post, Body, Get, Query, Param, HttpCode, HttpStatus, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  Query,
+  Param,
+  HttpCode,
+  HttpStatus,
+  BadRequestException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -52,7 +62,10 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reset password with token' })
   @ApiResponse({ status: 200, description: 'Password reset successful' })
-  @ApiResponse({ status: 400, description: 'Invalid token or passwords do not match' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid token or passwords do not match',
+  })
   async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
     return this.authService.resetPassword(resetPasswordDto);
   }
@@ -67,35 +80,53 @@ export class AuthController {
 
   @Post('verify-email')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Verify email with code (for registration)',
-    description: 'Verify email address using a 6-digit verification code. No authentication required.'
+    description:
+      'Verify email address using a 6-digit verification code. No authentication required.',
   })
   @ApiResponse({ status: 200, description: 'Email verified successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid or expired verification code' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid or expired verification code',
+  })
   async verifyEmailWithCode(@Body() verifyEmailDto: VerifyEmailDto) {
-    return this.authService.verifyEmailWithCode(verifyEmailDto.email, verifyEmailDto.code);
+    return this.authService.verifyEmailWithCode(
+      verifyEmailDto.email,
+      verifyEmailDto.code,
+    );
   }
 
   @Post('send-verification-code')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Send verification code to email',
-    description: 'Send a 6-digit verification code to the specified email address. No authentication required.'
+    description:
+      'Send a 6-digit verification code to the specified email address. No authentication required.',
   })
-  @ApiResponse({ status: 200, description: 'Verification code sent successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Verification code sent successfully',
+  })
   async sendVerificationCode(@Body() body: { email: string }) {
     return this.authService.sendVerificationCode(body.email);
   }
 
   @Post('registration/step')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Save registration step data (unified endpoint)',
-    description: 'Single endpoint to save data for any registration step. The step number determines which fields are required. Steps 1 and 7 can create new registrations (ID optional), while other steps require an existing registration ID.'
+    description:
+      'Single endpoint to save data for any registration step. The step number determines which fields are required. Steps 1 and 7 can create new registrations (ID optional), while other steps require an existing registration ID.',
   })
   @ApiResponse({ status: 201, description: 'Step data saved successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid step number or missing required fields' })
-  @ApiResponse({ status: 404, description: 'Registration not found (for steps requiring ID)' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid step number or missing required fields',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Registration not found (for steps requiring ID)',
+  })
   async saveRegistrationStep(@Body() dto: RegistrationStepDto) {
     return this.authService.saveRegistrationStep(dto);
   }
@@ -103,10 +134,12 @@ export class AuthController {
   @Get('registration/:id')
   @ApiOperation({ summary: 'Get registration progress' })
   @ApiParam({ name: 'id', description: 'Registration ID' })
-  @ApiResponse({ status: 200, description: 'Registration data retrieved successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Registration data retrieved successfully',
+  })
   @ApiResponse({ status: 404, description: 'Registration not found' })
   async getRegistration(@Param('id') id: string) {
     return this.authService.getRegistration(id);
   }
 }
-

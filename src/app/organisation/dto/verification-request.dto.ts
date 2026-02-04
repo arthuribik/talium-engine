@@ -1,4 +1,10 @@
-import { IsArray, ValidateNested, IsString, IsNotEmpty, ArrayMinSize } from 'class-validator';
+import {
+  IsArray,
+  ValidateNested,
+  IsString,
+  IsNotEmpty,
+  ArrayMinSize,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -27,4 +33,3 @@ export class VerificationRequestDto {
   @Type(() => DocumentDto)
   documents: DocumentDto[];
 }
-

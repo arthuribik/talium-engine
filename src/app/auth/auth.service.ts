@@ -1,4 +1,11 @@
-import { Injectable, ConflictException, UnauthorizedException, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  UnauthorizedException,
+  ForbiddenException,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -68,7 +75,8 @@ export class AuthService {
 
     return {
       status: 'success',
-      message: 'Registration successful. Please check your email to verify your account.',
+      message:
+        'Registration successful. Please check your email to verify your account.',
     };
   }
 
@@ -124,7 +132,8 @@ export class AuthService {
 
     return {
       status: 'success',
-      message: 'Registration successful. Please check your email to verify your account.',
+      message:
+        'Registration successful. Please check your email to verify your account.',
     };
   }
 
@@ -142,7 +151,10 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
+    const isPasswordValid = await bcrypt.compare(
+      loginDto.password,
+      user.password,
+    );
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -157,17 +169,24 @@ export class AuthService {
       userType: user.userType,
     };
 
-    const expiresIn = this.configService.get<string>('JWT_EXPIRES_IN') || '3600';
-    const expiresInFormatted = expiresIn.match(/^\d+$/) ? `${expiresIn}s` : expiresIn;
-    const jwtSecret = this.configService.get<string>('JWT_SECRET') || 'default-secret';
-    
+    const expiresIn =
+      this.configService.get<string>('JWT_EXPIRES_IN') || '3600';
+    const expiresInFormatted = expiresIn.match(/^\d+$/)
+      ? `${expiresIn}s`
+      : expiresIn;
+    const jwtSecret =
+      this.configService.get<string>('JWT_SECRET') || 'default-secret';
+
     const accessToken = this.jwtService.sign(payload, {
       secret: jwtSecret,
       expiresIn: expiresInFormatted,
     });
     const refreshToken = this.jwtService.sign(payload, {
-      secret: this.configService.get<string>('REFRESH_TOKEN_SECRET') || 'refresh-secret',
-      expiresIn: this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN') || '7d',
+      secret:
+        this.configService.get<string>('REFRESH_TOKEN_SECRET') ||
+        'refresh-secret',
+      expiresIn:
+        this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN') || '7d',
     });
 
     return {
@@ -292,35 +311,42 @@ export class AuthService {
   }
 
   // Verify email with code for registration flow
-  async verifyEmailWithCode(email: string, code: string): Promise<{ status: string; message: string; verified: boolean }> {
+  async verifyEmailWithCode(
+    email: string,
+    code: string,
+  ): Promise<{ status: string; message: string; verified: boolean }> {
     // In a real implementation, you would:
     // 1. Check if a verification code was sent to this email
     // 2. Verify the code matches and hasn't expired
     // 3. Mark the email as verified in the registration store
-    
+
     // For now, we'll use a simple in-memory store for verification codes
     // In production, this should be stored in a database or cache (Redis)
     const storedCode = this.emailVerificationCodes.get(email.toLowerCase());
-    
+
     if (!storedCode) {
-      throw new BadRequestException('No verification code found for this email. Please request a new code.');
+      throw new BadRequestException(
+        'No verification code found for this email. Please request a new code.',
+      );
     }
-    
+
     if (storedCode.code !== code) {
       throw new BadRequestException('Invalid verification code');
     }
-    
+
     if (storedCode.expiresAt < new Date()) {
       this.emailVerificationCodes.delete(email.toLowerCase());
-      throw new BadRequestException('Verification code has expired. Please request a new code.');
+      throw new BadRequestException(
+        'Verification code has expired. Please request a new code.',
+      );
     }
-    
+
     // Mark as verified
     this.emailVerificationCodes.set(email.toLowerCase(), {
       ...storedCode,
       verified: true,
     });
-    
+
     return {
       status: 'success',
       message: 'Email verified successfully',
@@ -329,7 +355,9 @@ export class AuthService {
   }
 
   // Send verification code to email (for registration)
-  async sendVerificationCode(email: string): Promise<{ status: string; message: string; code?: string }> {
+  async sendVerificationCode(
+    email: string,
+  ): Promise<{ status: string; message: string; code?: string }> {
     // Check if email already exists
     const existingUser = await this.prisma.user.findUnique({
       where: { email: email.toLowerCase() },
@@ -342,11 +370,11 @@ export class AuthService {
     // Generate 6-digit code
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     console.log(`Verification code: ${code}`);
-    
+
     // Store code with expiration (10 minutes)
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + 10);
-    
+
     this.emailVerificationCodes.set(email.toLowerCase(), {
       code,
       email: email.toLowerCase(),
@@ -354,11 +382,11 @@ export class AuthService {
       verified: false,
       createdAt: new Date(),
     });
-    
+
     // TODO: Send email with verification code
     // In production, use an email service (SendGrid, AWS SES, etc.)
     console.log(`Verification code for ${email}: ${code}`);
-    
+
     return {
       status: 'success',
       message: 'Verification code sent to email',
@@ -369,17 +397,21 @@ export class AuthService {
 
   // In-memory store for email verification codes
   // In production, use Redis or database
-  private emailVerificationCodes: Map<string, {
-    code: string;
-    email: string;
-    expiresAt: Date;
-    verified: boolean;
-    createdAt: Date;
-  }> = new Map();
+  private emailVerificationCodes: Map<
+    string,
+    {
+      code: string;
+      email: string;
+      expiresAt: Date;
+      verified: boolean;
+      createdAt: Date;
+    }
+  > = new Map();
 
   private generateRandomPassword(): string {
     const length = 12;
-    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@$!%*?&';
+    const charset =
+      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@$!%*?&';
     let password = '';
     for (let i = 0; i < length; i++) {
       password += charset.charAt(Math.floor(Math.random() * charset.length));
@@ -388,7 +420,10 @@ export class AuthService {
   }
 
   private generateToken(): string {
-    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    return (
+      Math.random().toString(36).substring(2, 15) +
+      Math.random().toString(36).substring(2, 15)
+    );
   }
 
   // In-memory store for registration progress
@@ -396,13 +431,15 @@ export class AuthService {
   private registrationStore: Map<string, any> = new Map();
 
   // Unified method to save any registration step
-  async saveRegistrationStep(dto: RegistrationStepDto): Promise<{ id: string; step: number; data: any }> {
+  async saveRegistrationStep(
+    dto: RegistrationStepDto,
+  ): Promise<{ id: string; step: number; data: any }> {
     const { step, id, ...data } = dto;
-    
+
     // Determine registration ID (use Organisation ID if provided, otherwise generate)
     let registrationId = id;
     let organisation: any = null;
-    
+
     // If ID is provided, try to find existing organisation
     if (registrationId) {
       organisation = await this.prisma.organisation.findUnique({
@@ -410,13 +447,13 @@ export class AuthService {
         include: { user: true },
       });
     }
-    
+
     // If ID not provided or organisation doesn't exist, create a new one
     if (!organisation) {
       // Create a temporary user and organisation for the registration
       const tempEmail = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}@registration.temp`;
       const tempPassword = await bcrypt.hash(this.generateRandomPassword(), 10);
-      
+
       const user = await this.prisma.user.create({
         data: {
           email: tempEmail,
@@ -428,7 +465,7 @@ export class AuthService {
           emailVerified: false,
         },
       });
-      
+
       organisation = await this.prisma.organisation.create({
         data: {
           userId: user.id,
@@ -437,22 +474,25 @@ export class AuthService {
           isRegistered: false,
         },
       });
-      
+
       registrationId = organisation.id;
     }
-    
+
     // Prepare update data based on step
     const updateData: any = {};
-    
+
     switch (step) {
       case 1:
         updateData.isRegistered = data.isRegistered;
         break;
       case 2:
         if (data.legalName) updateData.companyName = data.legalName;
-        if (data.countryOfIncorporation) updateData.countryOfIncorporation = data.countryOfIncorporation;
-        if (data.incorporationNumber) updateData.incorporationNumber = data.incorporationNumber;
-        if (data.countryOfIncorporation) updateData.country = data.countryOfIncorporation;
+        if (data.countryOfIncorporation)
+          updateData.countryOfIncorporation = data.countryOfIncorporation;
+        if (data.incorporationNumber)
+          updateData.incorporationNumber = data.incorporationNumber;
+        if (data.countryOfIncorporation)
+          updateData.country = data.countryOfIncorporation;
         break;
       case 3:
         // Category data - store in description or create a separate field
@@ -506,8 +546,10 @@ export class AuthService {
         }
         break;
       case 7:
-        if (data.organisationName) updateData.companyName = data.organisationName;
-        if (data.organisationCountry) updateData.country = data.organisationCountry;
+        if (data.organisationName)
+          updateData.companyName = data.organisationName;
+        if (data.organisationCountry)
+          updateData.country = data.organisationCountry;
         if (data.description) updateData.description = data.description;
         if (data.industry) updateData.industry = data.industry;
         if (data.foundedDate) {
@@ -521,9 +563,10 @@ export class AuthService {
       case 8:
         // Category data for non-registered
         if (organisation.description) {
-          const existingDesc = typeof organisation.description === 'string' 
-            ? JSON.parse(organisation.description) 
-            : organisation.description;
+          const existingDesc =
+            typeof organisation.description === 'string'
+              ? JSON.parse(organisation.description)
+              : organisation.description;
           updateData.description = JSON.stringify({
             ...existingDesc,
             category: data.category,
@@ -547,7 +590,7 @@ export class AuthService {
       default:
         throw new BadRequestException(`Invalid step number: ${step}`);
     }
-    
+
     // Update organisation with step data
     if (Object.keys(updateData).length > 0) {
       organisation = await this.prisma.organisation.update({
@@ -555,11 +598,16 @@ export class AuthService {
         data: updateData,
       });
     }
-    
+
     // Calculate profile completeness
     let completeness = 0;
-    if (organisation.companyName && organisation.companyName !== 'Pending Registration') completeness += 20;
-    if (organisation.country && organisation.country !== 'Unknown') completeness += 10;
+    if (
+      organisation.companyName &&
+      organisation.companyName !== 'Pending Registration'
+    )
+      completeness += 20;
+    if (organisation.country && organisation.country !== 'Unknown')
+      completeness += 10;
     if (organisation.isRegistered !== null) completeness += 10;
     if (organisation.description) completeness += 15;
     if (organisation.industry) completeness += 10;
@@ -567,12 +615,12 @@ export class AuthService {
     if (organisation.yearOfCommencement) completeness += 10;
     if (organisation.countryOfIncorporation) completeness += 10;
     if (organisation.incorporationNumber) completeness += 5;
-    
+
     await this.prisma.organisation.update({
       where: { id: organisation.id },
       data: { profileCompleteness: completeness },
     });
-    
+
     // Prepare response data
     let stepData: any = {};
     switch (step) {
@@ -588,9 +636,10 @@ export class AuthService {
         break;
       case 3:
       case 8:
-        const desc = typeof organisation.description === 'string' 
-          ? JSON.parse(organisation.description || '{}') 
-          : organisation.description || {};
+        const desc =
+          typeof organisation.description === 'string'
+            ? JSON.parse(organisation.description || '{}')
+            : organisation.description || {};
         stepData = {
           category: desc.category,
           schoolType: desc.schoolType,
@@ -606,7 +655,9 @@ export class AuthService {
           industry: organisation.industry,
           headquartersCity: organisation.address?.city,
           headquartersCountry: organisation.address?.country,
-          foundedDate: organisation.yearOfCommencement ? `${organisation.yearOfCommencement}-01-01` : null,
+          foundedDate: organisation.yearOfCommencement
+            ? `${organisation.yearOfCommencement}-01-01`
+            : null,
           address: organisation.address,
         };
         break;
@@ -624,12 +675,14 @@ export class AuthService {
           organisationCountry: organisation.country,
           description: organisation.description,
           industry: organisation.industry,
-          foundedDate: organisation.yearOfCommencement ? `${organisation.yearOfCommencement}-01-01` : null,
+          foundedDate: organisation.yearOfCommencement
+            ? `${organisation.yearOfCommencement}-01-01`
+            : null,
           address: organisation.address,
         };
         break;
     }
-    
+
     return {
       id: organisation.id,
       step,
@@ -643,18 +696,19 @@ export class AuthService {
       where: { id: registrationId },
       include: { user: true },
     });
-    
+
     if (!organisation) {
       throw new NotFoundException('Registration not found');
     }
-    
+
     // Parse description if it contains JSON data
     let categoryData = {};
     if (organisation.description) {
       try {
-        const parsed = typeof organisation.description === 'string' 
-          ? JSON.parse(organisation.description) 
-          : organisation.description;
+        const parsed =
+          typeof organisation.description === 'string'
+            ? JSON.parse(organisation.description)
+            : organisation.description;
         if (parsed.category) {
           categoryData = parsed;
         }
@@ -662,7 +716,7 @@ export class AuthService {
         // Not JSON, use as regular description
       }
     }
-    
+
     return {
       id: organisation.id,
       step1: { isRegistered: organisation.isRegistered },
@@ -673,13 +727,17 @@ export class AuthService {
       },
       step3: categoryData,
       step4: {
-        description: typeof organisation.description === 'string' && !organisation.description.startsWith('{') 
-          ? organisation.description 
-          : null,
+        description:
+          typeof organisation.description === 'string' &&
+          !organisation.description.startsWith('{')
+            ? organisation.description
+            : null,
         industry: organisation.industry,
         headquartersCity: (organisation.address as any)?.city,
         headquartersCountry: (organisation.address as any)?.country,
-        foundedDate: organisation.yearOfCommencement ? `${organisation.yearOfCommencement}-01-01` : null,
+        foundedDate: organisation.yearOfCommencement
+          ? `${organisation.yearOfCommencement}-01-01`
+          : null,
         address: organisation.address,
       },
       step5: {
@@ -688,11 +746,15 @@ export class AuthService {
       step7: {
         organisationName: organisation.companyName,
         organisationCountry: organisation.country,
-        description: typeof organisation.description === 'string' && !organisation.description.startsWith('{') 
-          ? organisation.description 
-          : null,
+        description:
+          typeof organisation.description === 'string' &&
+          !organisation.description.startsWith('{')
+            ? organisation.description
+            : null,
         industry: organisation.industry,
-        foundedDate: organisation.yearOfCommencement ? `${organisation.yearOfCommencement}-01-01` : null,
+        foundedDate: organisation.yearOfCommencement
+          ? `${organisation.yearOfCommencement}-01-01`
+          : null,
         address: organisation.address,
       },
       step8: categoryData,
@@ -701,21 +763,35 @@ export class AuthService {
       updatedAt: organisation.updatedAt,
     };
   }
-  
+
   private calculateCurrentStep(organisation: any): number {
-    if (!organisation.isRegistered && organisation.companyName && organisation.companyName !== 'Pending Registration') {
+    if (
+      !organisation.isRegistered &&
+      organisation.companyName &&
+      organisation.companyName !== 'Pending Registration'
+    ) {
       return 8;
     }
-    if (organisation.user?.email && !organisation.user.email.includes('@registration.temp')) {
+    if (
+      organisation.user?.email &&
+      !organisation.user.email.includes('@registration.temp')
+    ) {
       return 5;
     }
-    if (organisation.description && typeof organisation.description === 'string' && organisation.description.startsWith('{')) {
+    if (
+      organisation.description &&
+      typeof organisation.description === 'string' &&
+      organisation.description.startsWith('{')
+    ) {
       return organisation.isRegistered ? 3 : 8;
     }
     if (organisation.industry || organisation.address) {
       return 4;
     }
-    if (organisation.countryOfIncorporation || organisation.incorporationNumber) {
+    if (
+      organisation.countryOfIncorporation ||
+      organisation.incorporationNumber
+    ) {
       return 2;
     }
     return 1;
@@ -726,19 +802,22 @@ export class AuthService {
   }
 
   // Get all registrations (for admin)
-  async getAllRegistrations(): Promise<Array<{ id: string; [key: string]: any }>> {
+  async getAllRegistrations(): Promise<
+    Array<{ id: string; [key: string]: any }>
+  > {
     const organisations = await this.prisma.organisation.findMany({
       include: { user: true },
       orderBy: { updatedAt: 'desc' },
     });
-    
-    return organisations.map(org => {
+
+    return organisations.map((org) => {
       let categoryData = {};
       if (org.description) {
         try {
-          const parsed = typeof org.description === 'string' 
-            ? JSON.parse(org.description) 
-            : org.description;
+          const parsed =
+            typeof org.description === 'string'
+              ? JSON.parse(org.description)
+              : org.description;
           if (parsed.category) {
             categoryData = parsed;
           }
@@ -746,7 +825,7 @@ export class AuthService {
           // Not JSON
         }
       }
-      
+
       return {
         id: org.id,
         step1: { isRegistered: org.isRegistered },
@@ -757,13 +836,17 @@ export class AuthService {
         },
         step3: categoryData,
         step4: {
-          description: typeof org.description === 'string' && !org.description.startsWith('{') 
-            ? org.description 
-            : null,
+          description:
+            typeof org.description === 'string' &&
+            !org.description.startsWith('{')
+              ? org.description
+              : null,
           industry: org.industry,
           headquartersCity: (org.address as any)?.city,
           headquartersCountry: (org.address as any)?.country,
-          foundedDate: org.yearOfCommencement ? `${org.yearOfCommencement}-01-01` : null,
+          foundedDate: org.yearOfCommencement
+            ? `${org.yearOfCommencement}-01-01`
+            : null,
           address: org.address,
         },
         step5: {
@@ -772,11 +855,15 @@ export class AuthService {
         step7: {
           organisationName: org.companyName,
           organisationCountry: org.country,
-          description: typeof org.description === 'string' && !org.description.startsWith('{') 
-            ? org.description 
-            : null,
+          description:
+            typeof org.description === 'string' &&
+            !org.description.startsWith('{')
+              ? org.description
+              : null,
           industry: org.industry,
-          foundedDate: org.yearOfCommencement ? `${org.yearOfCommencement}-01-01` : null,
+          foundedDate: org.yearOfCommencement
+            ? `${org.yearOfCommencement}-01-01`
+            : null,
           address: org.address,
         },
         step8: categoryData,
@@ -793,4 +880,3 @@ export class AuthService {
     return this.getRegistration(registrationId);
   }
 }
-

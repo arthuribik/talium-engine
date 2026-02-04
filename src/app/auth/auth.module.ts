@@ -6,13 +6,9 @@ import { PrismaModule } from '../../utility/prisma/prisma.module';
 import { JwtAuthModule } from '../../utility/jwt/jwt.module';
 
 @Module({
-  imports: [
-    PrismaModule,
-    JwtAuthModule,
-  ],
+  imports: [PrismaModule, JwtAuthModule],
   controllers: [AuthController],
   providers: [AuthService],
   exports: [AuthService],
 })
 export class AuthModule {}
-

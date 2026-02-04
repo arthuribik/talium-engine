@@ -1,4 +1,11 @@
-import { IsString, IsNotEmpty, IsEnum, IsDateString, IsObject, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsEnum,
+  IsDateString,
+  IsObject,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -25,7 +32,9 @@ export class IdentityVerifyDto {
   @IsNotEmpty()
   nationality: string;
 
-  @ApiProperty({ enum: ['national_id', 'passport', 'drivers_license', 'voters_card'] })
+  @ApiProperty({
+    enum: ['national_id', 'passport', 'drivers_license', 'voters_card'],
+  })
   @IsEnum(['national_id', 'passport', 'drivers_license', 'voters_card'])
   @IsNotEmpty()
   idType: string;
@@ -46,4 +55,3 @@ export class IdentityVerifyDto {
   @Type(() => LivenessCheckDataDto)
   livenessCheckData: LivenessCheckDataDto;
 }
-

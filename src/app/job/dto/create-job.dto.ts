@@ -1,4 +1,14 @@
-import { IsString, IsNotEmpty, IsEnum, IsOptional, IsInt, IsDateString, IsArray, IsObject, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsEnum,
+  IsOptional,
+  IsInt,
+  IsDateString,
+  IsArray,
+  IsObject,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -94,4 +104,3 @@ export class CreateJobDto {
   @Type(() => ApplyCTADto)
   applyCTA?: ApplyCTADto;
 }
-

@@ -1,5 +1,22 @@
-import { Controller, Post, Get, Put, Body, UseGuards, Request, Param, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
+import {
+  Controller,
+  Post,
+  Get,
+  Put,
+  Body,
+  UseGuards,
+  Request,
+  Param,
+  Query,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../utility/jwt/jwt-auth.guard';
 import { AdminService } from './admin.service';
 import { InviteAdminDto } from './dto/invite-admin.dto';
@@ -16,7 +33,9 @@ export class AdminController {
   ) {}
 
   @Post('create-super-admin')
-  @ApiOperation({ summary: 'Create the first super admin (only if no super admin exists)' })
+  @ApiOperation({
+    summary: 'Create the first super admin (only if no super admin exists)',
+  })
   @ApiResponse({ status: 201, description: 'Super admin created successfully' })
   @ApiResponse({ status: 403, description: 'Super admin already exists' })
   @ApiResponse({ status: 409, description: 'Email already exists' })
@@ -28,8 +47,14 @@ export class AdminController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Invite a new admin user (Super Admin only)' })
-  @ApiResponse({ status: 201, description: 'Admin invitation sent successfully' })
-  @ApiResponse({ status: 403, description: 'Forbidden - Only super admins can invite' })
+  @ApiResponse({
+    status: 201,
+    description: 'Admin invitation sent successfully',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Only super admins can invite',
+  })
   @ApiResponse({ status: 409, description: 'Email already exists' })
   async inviteAdmin(@Request() req, @Body() inviteAdminDto: InviteAdminDto) {
     return this.adminService.inviteAdmin(req.user.userId, inviteAdminDto);
@@ -37,9 +62,17 @@ export class AdminController {
 
   @Post('onboarding/complete')
   @ApiOperation({ summary: 'Complete admin onboarding' })
-  @ApiResponse({ status: 200, description: 'Admin onboarding completed successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid token or passwords do not match' })
-  async completeOnboarding(@Body() completeOnboardingDto: CompleteOnboardingDto) {
+  @ApiResponse({
+    status: 200,
+    description: 'Admin onboarding completed successfully',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid token or passwords do not match',
+  })
+  async completeOnboarding(
+    @Body() completeOnboardingDto: CompleteOnboardingDto,
+  ) {
     return this.adminService.completeOnboarding(completeOnboardingDto);
   }
 
@@ -47,7 +80,10 @@ export class AdminController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get dashboard statistics' })
-  @ApiResponse({ status: 200, description: 'Statistics retrieved successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Statistics retrieved successfully',
+  })
   async getDashboardStats(@Request() req) {
     return this.adminService.getDashboardStats();
   }
@@ -59,32 +95,60 @@ export class AdminController {
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Users retrieved successfully' })
-  async getAllUsers(@Request() req, @Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.adminService.getAllUsers(page ? parseInt(page) : 1, limit ? parseInt(limit) : 20);
+  async getAllUsers(
+    @Request() req,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.adminService.getAllUsers(
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 20,
+    );
   }
 
   @Get('organisations')
   @ApiOperation({ summary: 'Get all organisations (Public)' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  @ApiResponse({ status: 200, description: 'Organisations retrieved successfully' })
-  async getAllOrganisations(@Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.adminService.getAllOrganisations(page ? parseInt(page) : 1, limit ? parseInt(limit) : 20);
+  @ApiResponse({
+    status: 200,
+    description: 'Organisations retrieved successfully',
+  })
+  async getAllOrganisations(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.adminService.getAllOrganisations(
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 20,
+    );
   }
 
   @Get('professionals')
   @ApiOperation({ summary: 'Get all professionals (Public)' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  @ApiResponse({ status: 200, description: 'Professionals retrieved successfully' })
-  async getAllProfessionals(@Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.adminService.getAllProfessionals(page ? parseInt(page) : 1, limit ? parseInt(limit) : 20);
+  @ApiResponse({
+    status: 200,
+    description: 'Professionals retrieved successfully',
+  })
+  async getAllProfessionals(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.adminService.getAllProfessionals(
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 20,
+    );
   }
 
   @Get('professionals/:id')
   @ApiOperation({ summary: 'Get professional by ID (Public)' })
   @ApiParam({ name: 'id', description: 'Professional ID' })
-  @ApiResponse({ status: 200, description: 'Professional retrieved successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Professional retrieved successfully',
+  })
   @ApiResponse({ status: 404, description: 'Professional not found' })
   async getProfessionalById(@Param('id') id: string) {
     return this.adminService.getProfessionalById(id);
@@ -95,8 +159,14 @@ export class AdminController {
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiResponse({ status: 200, description: 'Jobs retrieved successfully' })
-  async getAllJobs(@Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.adminService.getAllJobs(page ? parseInt(page) : 1, limit ? parseInt(limit) : 20);
+  async getAllJobs(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.adminService.getAllJobs(
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 20,
+    );
   }
 
   @Get('transactions')
@@ -105,10 +175,27 @@ export class AdminController {
   @ApiOperation({ summary: 'Get all transactions' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  @ApiQuery({ name: 'status', required: false, type: String, description: 'Filter by status: all, success, pending, failed' })
-  @ApiResponse({ status: 200, description: 'Transactions retrieved successfully' })
-  async getAllTransactions(@Request() req, @Query('page') page?: string, @Query('limit') limit?: string, @Query('status') status?: string) {
-    return this.adminService.getAllTransactions(page ? parseInt(page) : 1, limit ? parseInt(limit) : 20, status || 'all');
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    type: String,
+    description: 'Filter by status: all, success, pending, failed',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Transactions retrieved successfully',
+  })
+  async getAllTransactions(
+    @Request() req,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.adminService.getAllTransactions(
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 20,
+      status || 'all',
+    );
   }
 
   @Get('transactions/:transactionId')
@@ -116,9 +203,15 @@ export class AdminController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get transaction details' })
   @ApiParam({ name: 'transactionId', description: 'Transaction ID' })
-  @ApiResponse({ status: 200, description: 'Transaction retrieved successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Transaction retrieved successfully',
+  })
   @ApiResponse({ status: 404, description: 'Transaction not found' })
-  async getTransaction(@Request() req, @Param('transactionId') transactionId: string) {
+  async getTransaction(
+    @Request() req,
+    @Param('transactionId') transactionId: string,
+  ) {
     return this.adminService.getTransaction(transactionId);
   }
 
@@ -130,8 +223,17 @@ export class AdminController {
   @ApiResponse({ status: 200, description: 'Payment validated successfully' })
   @ApiResponse({ status: 400, description: 'Invalid request' })
   @ApiResponse({ status: 404, description: 'Transaction not found' })
-  async validatePayment(@Request() req, @Param('transactionId') transactionId: string, @Body() body: { reason: string; proofOfPayment?: string }) {
-    return this.adminService.validatePayment(req.user.userId, transactionId, body.reason, body.proofOfPayment);
+  async validatePayment(
+    @Request() req,
+    @Param('transactionId') transactionId: string,
+    @Body() body: { reason: string; proofOfPayment?: string },
+  ) {
+    return this.adminService.validatePayment(
+      req.user.userId,
+      transactionId,
+      body.reason,
+      body.proofOfPayment,
+    );
   }
 
   @Put('users/:userId/activate')
@@ -161,10 +263,19 @@ export class AdminController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Approve organisation verification' })
   @ApiParam({ name: 'orgId', description: 'Organisation ID' })
-  @ApiResponse({ status: 200, description: 'Organisation verified successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Organisation verified successfully',
+  })
   @ApiResponse({ status: 404, description: 'Organisation not found' })
-  async approveOrganisationVerification(@Request() req, @Param('orgId') orgId: string) {
-    return this.adminService.approveOrganisationVerification(orgId, req.user.userId);
+  async approveOrganisationVerification(
+    @Request() req,
+    @Param('orgId') orgId: string,
+  ) {
+    return this.adminService.approveOrganisationVerification(
+      orgId,
+      req.user.userId,
+    );
   }
 
   @Put('organisations/:orgId/verification-status')
@@ -172,10 +283,21 @@ export class AdminController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update organisation verification status' })
   @ApiParam({ name: 'orgId', description: 'Organisation ID' })
-  @ApiResponse({ status: 200, description: 'Verification status updated successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Verification status updated successfully',
+  })
   @ApiResponse({ status: 404, description: 'Organisation not found' })
-  async updateOrganisationVerificationStatus(@Request() req, @Param('orgId') orgId: string, @Body() body: { status: string }) {
-    return this.adminService.updateOrganisationVerificationStatus(orgId, body.status, req.user.userId);
+  async updateOrganisationVerificationStatus(
+    @Request() req,
+    @Param('orgId') orgId: string,
+    @Body() body: { status: string },
+  ) {
+    return this.adminService.updateOrganisationVerificationStatus(
+      orgId,
+      body.status,
+      req.user.userId,
+    );
   }
 
   @Put('professionals/:profId/verify/:type/:verificationId')
@@ -185,14 +307,22 @@ export class AdminController {
   @ApiParam({ name: 'profId', description: 'Professional ID' })
   @ApiParam({ name: 'type', enum: ['identity', 'education', 'experience'] })
   @ApiParam({ name: 'verificationId', description: 'Verification ID' })
-  @ApiResponse({ status: 200, description: 'Verification approved successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Verification approved successfully',
+  })
   async approveProfessionalVerification(
     @Request() req,
     @Param('profId') profId: string,
     @Param('type') type: 'identity' | 'education' | 'experience',
     @Param('verificationId') verificationId: string,
   ) {
-    return this.adminService.approveProfessionalVerification(profId, type, verificationId, req.user.userId);
+    return this.adminService.approveProfessionalVerification(
+      profId,
+      type,
+      verificationId,
+      req.user.userId,
+    );
   }
 
   @Get('registrations')
@@ -201,18 +331,25 @@ export class AdminController {
   @ApiOperation({ summary: 'Get all organisation registrations' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  @ApiResponse({ status: 200, description: 'Registrations retrieved successfully' })
-  async getAllRegistrations(@Request() req, @Query('page') page?: string, @Query('limit') limit?: string) {
+  @ApiResponse({
+    status: 200,
+    description: 'Registrations retrieved successfully',
+  })
+  async getAllRegistrations(
+    @Request() req,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
     const pageNum = page ? parseInt(page) : 1;
     const limitNum = limit ? parseInt(limit) : 20;
     const allRegistrations = await this.authService.getAllRegistrations();
-    
+
     // Paginate
     const start = (pageNum - 1) * limitNum;
     const end = start + limitNum;
     const paginatedRegistrations = allRegistrations.slice(start, end);
     const total = allRegistrations.length;
-    
+
     return {
       status: 'success',
       data: {
@@ -232,7 +369,10 @@ export class AdminController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get registration details' })
   @ApiParam({ name: 'id', description: 'Registration ID' })
-  @ApiResponse({ status: 200, description: 'Registration retrieved successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Registration retrieved successfully',
+  })
   @ApiResponse({ status: 404, description: 'Registration not found' })
   async getRegistration(@Request() req, @Param('id') id: string) {
     return {
@@ -248,8 +388,16 @@ export class AdminController {
   @ApiResponse({ status: 201, description: 'Job created successfully' })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @ApiResponse({ status: 404, description: 'Organisation not found' })
-  async createJob(@Request() req, @Body() createJobDto: any, @Query('organisationId') organisationId?: string) {
-    return this.adminService.createJob(req.user.userId, organisationId, createJobDto);
+  async createJob(
+    @Request() req,
+    @Body() createJobDto: any,
+    @Query('organisationId') organisationId?: string,
+  ) {
+    return this.adminService.createJob(
+      req.user.userId,
+      organisationId,
+      createJobDto,
+    );
   }
 
   @Put('jobs/:jobId/status')
@@ -259,7 +407,11 @@ export class AdminController {
   @ApiParam({ name: 'jobId', description: 'Job ID' })
   @ApiResponse({ status: 200, description: 'Job status updated successfully' })
   @ApiResponse({ status: 404, description: 'Job not found' })
-  async updateJobStatus(@Request() req, @Param('jobId') jobId: string, @Body() body: { status: string }) {
+  async updateJobStatus(
+    @Request() req,
+    @Param('jobId') jobId: string,
+    @Body() body: { status: string },
+  ) {
     return this.adminService.updateJobStatus(jobId, body.status);
   }
 
@@ -267,11 +419,16 @@ export class AdminController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get subscription plans' })
-  @ApiQuery({ name: 'entityType', required: false, enum: ['professional', 'organisation'] })
+  @ApiQuery({
+    name: 'entityType',
+    required: false,
+    enum: ['professional', 'organisation'],
+  })
   @ApiResponse({ status: 200, description: 'Plans retrieved successfully' })
-  async getSubscriptionPlans(@Request() req, @Query('entityType') entityType?: 'professional' | 'organisation') {
+  async getSubscriptionPlans(
+    @Request() req,
+    @Query('entityType') entityType?: 'professional' | 'organisation',
+  ) {
     return this.adminService.getSubscriptionPlans(entityType);
   }
 }
-
-

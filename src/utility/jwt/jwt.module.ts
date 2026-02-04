@@ -13,7 +13,9 @@ import { PrismaModule } from '../prisma/prisma.module';
       useFactory: async (configService: ConfigService) => {
         const expiresIn = configService.get<string>('JWT_EXPIRES_IN') || '3600';
         // Ensure expiresIn has a unit suffix if it's just a number
-        const expiresInFormatted = expiresIn.match(/^\d+$/) ? `${expiresIn}s` : expiresIn;
+        const expiresInFormatted = expiresIn.match(/^\d+$/)
+          ? `${expiresIn}s`
+          : expiresIn;
         return {
           secret: configService.get<string>('JWT_SECRET') || 'default-secret',
           signOptions: {
@@ -29,4 +31,3 @@ import { PrismaModule } from '../prisma/prisma.module';
   exports: [JwtModule],
 })
 export class JwtAuthModule {}
-

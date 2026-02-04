@@ -5,10 +5,14 @@ const prisma = new PrismaClient();
 
 async function createAdmin() {
   const args = process.argv.slice(2);
-  
+
   if (args.length < 4) {
-    console.log('Usage: ts-node create-admin.ts <firstName> <lastName> <email> <password> [role]');
-    console.log('Role options: super_admin, admin, support, auditor (default: admin)');
+    console.log(
+      'Usage: ts-node create-admin.ts <firstName> <lastName> <email> <password> [role]',
+    );
+    console.log(
+      'Role options: super_admin, admin, support, auditor (default: admin)',
+    );
     process.exit(1);
   }
 
@@ -32,7 +36,9 @@ async function createAdmin() {
       });
 
       if (existingSuperAdmin) {
-        console.error('Error: Super admin already exists. Use invite endpoint instead.');
+        console.error(
+          'Error: Super admin already exists. Use invite endpoint instead.',
+        );
         process.exit(1);
       }
     }
@@ -79,4 +85,3 @@ async function createAdmin() {
 }
 
 createAdmin();
-

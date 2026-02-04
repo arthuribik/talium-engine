@@ -1,4 +1,14 @@
-import { IsString, IsNotEmpty, IsEnum, IsOptional, IsBoolean, IsArray, IsObject, ValidateNested, IsNumber } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsEnum,
+  IsOptional,
+  IsBoolean,
+  IsArray,
+  IsObject,
+  ValidateNested,
+  IsNumber,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -122,4 +132,3 @@ export class AddExperienceDto {
   @Type(() => VerificationContactDto)
   verificationContact?: VerificationContactDto;
 }
-

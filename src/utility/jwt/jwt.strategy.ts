@@ -38,7 +38,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     if (user.userType !== 'ADMIN') {
-      if (user.status !== 'ACTIVE' && user.status !== 'VERIFIED' && user.status !== 'PENDING_INVITATION') {
+      if (
+        user.status !== 'ACTIVE' &&
+        user.status !== 'VERIFIED' &&
+        user.status !== 'PENDING_INVITATION'
+      ) {
         throw new UnauthorizedException('Account not verified or active');
       }
     }
@@ -53,4 +57,3 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     };
   }
 }
-

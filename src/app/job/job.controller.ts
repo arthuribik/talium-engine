@@ -1,5 +1,23 @@
-import { Controller, Post, Get, Put, Param, Body, Query, UseGuards, Request, NotFoundException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
+import {
+  Controller,
+  Post,
+  Get,
+  Put,
+  Param,
+  Body,
+  Query,
+  UseGuards,
+  Request,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../utility/jwt/jwt-auth.guard';
 import { JobService } from './job.service';
 import { CreateJobDto } from './dto/create-job.dto';
@@ -17,20 +35,32 @@ export class JobController {
   @ApiResponse({ status: 201, description: 'Job created successfully' })
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @ApiResponse({ status: 404, description: 'Organisation not found' })
-  async createJob(@Request() req, @Body() createJobDto: CreateJobDto, @Query('organisationId') organisationId?: string) {
+  async createJob(
+    @Request() req,
+    @Body() createJobDto: CreateJobDto,
+    @Query('organisationId') organisationId?: string,
+  ) {
     // Simple: get organisationId from query param, or fetch from database using userId
-    const orgId = organisationId || await this.jobService.getOrganisationIdByUserId(req.user.userId);
-    
+    const orgId =
+      organisationId ||
+      (await this.jobService.getOrganisationIdByUserId(req.user.userId));
+
     if (!orgId) {
-      throw new NotFoundException('Organisation not found. Please complete your organisation setup.');
+      throw new NotFoundException(
+        'Organisation not found. Please complete your organisation setup.',
+      );
     }
-    
+
     return this.jobService.createJob(req.user.userId, orgId, createJobDto);
   }
 
   @Get()
   @ApiOperation({ summary: 'Get all jobs' })
-  @ApiQuery({ name: 'organisationId', required: false, description: 'Filter by organisation ID' })
+  @ApiQuery({
+    name: 'organisationId',
+    required: false,
+    description: 'Filter by organisation ID',
+  })
   @ApiResponse({ status: 200, description: 'Jobs retrieved successfully' })
   async getJobs(@Query('organisationId') organisationId?: string) {
     return this.jobService.getJobs(organisationId);
@@ -50,10 +80,20 @@ export class JobController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Apply to a job' })
   @ApiParam({ name: 'jobId', description: 'Job ID' })
-  @ApiResponse({ status: 201, description: 'Application submitted successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid application or requirements not met' })
+  @ApiResponse({
+    status: 201,
+    description: 'Application submitted successfully',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid application or requirements not met',
+  })
   @ApiResponse({ status: 403, description: 'Forbidden' })
-  async applyToJob(@Request() req, @Param('jobId') jobId: string, @Body() applyJobDto: ApplyJobDto) {
+  async applyToJob(
+    @Request() req,
+    @Param('jobId') jobId: string,
+    @Body() applyJobDto: ApplyJobDto,
+  ) {
     return this.jobService.applyToJob(req.user.userId, jobId, applyJobDto);
   }
 
@@ -69,4 +109,3 @@ export class JobController {
     return this.jobService.publishJob(req.user.userId, jobId);
   }
 }
-

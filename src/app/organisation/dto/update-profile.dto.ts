@@ -1,5 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsUrl, IsObject, ValidateNested, IsBoolean, IsDateString } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsUrl,
+  IsObject,
+  ValidateNested,
+  IsBoolean,
+  IsDateString,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 class AddressDto {
@@ -189,4 +197,3 @@ export class UpdateOrganisationProfileDto {
   @Type(() => AddressDto)
   address?: AddressDto;
 }
-

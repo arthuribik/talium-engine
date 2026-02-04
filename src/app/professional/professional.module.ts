@@ -11,4 +11,3 @@ import { JwtAuthModule } from '../../utility/jwt/jwt.module';
   exports: [ProfessionalService],
 })
 export class ProfessionalModule {}
-

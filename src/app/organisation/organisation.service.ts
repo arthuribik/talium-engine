@@ -1,4 +1,9 @@
-import { Injectable, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../utility/prisma/prisma.service';
 import { OrganisationSetupDto } from './dto/organisation-setup.dto';
 import { VerificationRequestDto } from './dto/verification-request.dto';
@@ -43,17 +48,17 @@ export class OrganisationService {
       legalName: orgData.legalName || null,
       otherName: orgData.otherName || null,
       description: organisation.description || null,
-      
+
       // Registration Status
       isRegistered: organisation.isRegistered ?? null,
-      
+
       // Incorporation Details
       countryOfIncorporation: organisation.countryOfIncorporation || null,
       incorporationNumber: organisation.incorporationNumber || null,
-      
+
       // Organisation Details (for non-registered)
       organisationCountry: orgData.organisationCountry || null,
-      
+
       // Category
       category: orgData.category || null,
       schoolType: orgData.schoolType || null,
@@ -61,14 +66,16 @@ export class OrganisationService {
       internationalOrgType: orgData.internationalOrgType || null,
       politicalPartyCountry: orgData.politicalPartyCountry || null,
       associatedSchool: orgData.associatedSchool || null,
-      
+
       // Business Details
       industry: organisation.industry || null,
       companySize: organisation.companySize || null,
       headquartersCity: orgData.headquartersCity || null,
       headquartersCountry: orgData.headquartersCountry || null,
-      foundedDate: orgData.foundedDate ? orgData.foundedDate.toISOString().split('T')[0] : null,
-      
+      foundedDate: orgData.foundedDate
+        ? orgData.foundedDate.toISOString().split('T')[0]
+        : null,
+
       // Contact & Online
       website: organisation.website || null,
       socialMedia: {
@@ -78,7 +85,7 @@ export class OrganisationService {
         instagram: socialMedia.instagram || null,
         youtube: socialMedia.youtube || null,
       },
-      
+
       // Address
       address: {
         buildingName: addressData.buildingName || null,
@@ -97,7 +104,10 @@ export class OrganisationService {
     };
   }
 
-  async updateOrganisationProfile(userId: string, updateDto: UpdateOrganisationProfileDto) {
+  async updateOrganisationProfile(
+    userId: string,
+    updateDto: UpdateOrganisationProfileDto,
+  ) {
     const organisation = await this.prisma.organisation.findUnique({
       where: { userId },
     });
@@ -108,7 +118,7 @@ export class OrganisationService {
 
     // Get current address and merge with new address
     const currentAddress = (organisation.address as any) || {};
-    const updatedAddress = updateDto.address 
+    const updatedAddress = updateDto.address
       ? { ...currentAddress, ...updateDto.address }
       : currentAddress;
 
@@ -143,11 +153,13 @@ export class OrganisationService {
     if (fields.companySize) completeness += 10;
     if (fields.website) completeness += 10;
     if (fields.description) completeness += 10;
-    if (fields.address && Object.keys(fields.address).length > 0) completeness += 20;
+    if (fields.address && Object.keys(fields.address).length > 0)
+      completeness += 20;
     if (fields.category) completeness += 10;
     if (fields.foundedDate) completeness += 10;
     if (organisation.incorporationStatus) completeness += 10;
-    if (organisation.countryOfIncorporation || updateDto.countryOfIncorporation) completeness += 10;
+    if (organisation.countryOfIncorporation || updateDto.countryOfIncorporation)
+      completeness += 10;
 
     const updateData: any = {
       ...(updateDto.companyName && { companyName: updateDto.companyName }),
@@ -159,17 +171,39 @@ export class OrganisationService {
       ...(updateDto.description && { description: updateDto.description }),
       ...(updateDto.category && { category: updateDto.category }),
       ...(updateDto.schoolType && { schoolType: updateDto.schoolType }),
-      ...(updateDto.religiousOrgType && { religiousOrgType: updateDto.religiousOrgType }),
-      ...(updateDto.internationalOrgType && { internationalOrgType: updateDto.internationalOrgType }),
-      ...(updateDto.politicalPartyCountry && { politicalPartyCountry: updateDto.politicalPartyCountry }),
-      ...(updateDto.associatedSchool && { associatedSchool: updateDto.associatedSchool }),
-      ...(updateDto.countryOfIncorporation && { countryOfIncorporation: updateDto.countryOfIncorporation }),
-      ...(updateDto.incorporationNumber && { incorporationNumber: updateDto.incorporationNumber }),
-      ...(updateDto.organisationCountry && { organisationCountry: updateDto.organisationCountry }),
-      ...(updateDto.headquartersCity && { headquartersCity: updateDto.headquartersCity }),
-      ...(updateDto.headquartersCountry && { headquartersCountry: updateDto.headquartersCountry }),
-      ...(updateDto.foundedDate && { foundedDate: new Date(updateDto.foundedDate) }),
-      ...(updateDto.isRegistered !== undefined && { isRegistered: updateDto.isRegistered }),
+      ...(updateDto.religiousOrgType && {
+        religiousOrgType: updateDto.religiousOrgType,
+      }),
+      ...(updateDto.internationalOrgType && {
+        internationalOrgType: updateDto.internationalOrgType,
+      }),
+      ...(updateDto.politicalPartyCountry && {
+        politicalPartyCountry: updateDto.politicalPartyCountry,
+      }),
+      ...(updateDto.associatedSchool && {
+        associatedSchool: updateDto.associatedSchool,
+      }),
+      ...(updateDto.countryOfIncorporation && {
+        countryOfIncorporation: updateDto.countryOfIncorporation,
+      }),
+      ...(updateDto.incorporationNumber && {
+        incorporationNumber: updateDto.incorporationNumber,
+      }),
+      ...(updateDto.organisationCountry && {
+        organisationCountry: updateDto.organisationCountry,
+      }),
+      ...(updateDto.headquartersCity && {
+        headquartersCity: updateDto.headquartersCity,
+      }),
+      ...(updateDto.headquartersCountry && {
+        headquartersCountry: updateDto.headquartersCountry,
+      }),
+      ...(updateDto.foundedDate && {
+        foundedDate: new Date(updateDto.foundedDate),
+      }),
+      ...(updateDto.isRegistered !== undefined && {
+        isRegistered: updateDto.isRegistered,
+      }),
       ...(updateDto.address && { address: updatedAddress as any }),
       profileCompleteness: completeness,
     };
@@ -211,8 +245,10 @@ export class OrganisationService {
     });
 
     const totalJobs = jobs.length;
-    const publishedJobs = jobs.filter(j => j.status === 'published').length;
-    const activeJobs = jobs.filter(j => j.status === 'published' || j.status === 'paused').length;
+    const publishedJobs = jobs.filter((j) => j.status === 'published').length;
+    const activeJobs = jobs.filter(
+      (j) => j.status === 'published' || j.status === 'paused',
+    ).length;
 
     // Calculate applications stats
     let totalApplications = 0;
@@ -248,7 +284,11 @@ export class OrganisationService {
     };
   }
 
-  async getOrganisationJobs(userId: string, page: number = 1, limit: number = 20) {
+  async getOrganisationJobs(
+    userId: string,
+    page: number = 1,
+    limit: number = 20,
+  ) {
     const organisation = await this.prisma.organisation.findUnique({
       where: { userId },
     });
@@ -290,7 +330,7 @@ export class OrganisationService {
     return {
       success: true,
       data: {
-        jobs: jobs.map(job => ({
+        jobs: jobs.map((job) => ({
           ...job,
           applicants: job.applications.length,
         })),
@@ -304,7 +344,13 @@ export class OrganisationService {
     };
   }
 
-  async getApplications(userId: string, page: number = 1, limit: number = 20, jobId?: string, status?: string) {
+  async getApplications(
+    userId: string,
+    page: number = 1,
+    limit: number = 20,
+    jobId?: string,
+    status?: string,
+  ) {
     const organisation = await this.prisma.organisation.findUnique({
       where: { userId },
     });
@@ -378,7 +424,7 @@ export class OrganisationService {
     ]);
 
     // Calculate role match score for each application
-    const applicationsWithScore = applications.map(app => {
+    const applicationsWithScore = applications.map((app) => {
       let matchScore = 0;
       const factors = [];
 
@@ -386,9 +432,13 @@ export class OrganisationService {
       if (app.job.experienceYears && app.professional.workExperience?.[0]) {
         const professionalExp = app.professional.workExperience[0];
         const startDate = new Date(professionalExp.startDate);
-        const endDate = professionalExp.currentlyWorking ? new Date() : new Date(professionalExp.endDate);
-        const yearsOfExp = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 365);
-        
+        const endDate = professionalExp.currentlyWorking
+          ? new Date()
+          : new Date(professionalExp.endDate);
+        const yearsOfExp =
+          (endDate.getTime() - startDate.getTime()) /
+          (1000 * 60 * 60 * 24 * 365);
+
         if (yearsOfExp >= app.job.experienceYears) {
           matchScore += 30;
           factors.push('Experience');
@@ -441,11 +491,13 @@ export class OrganisationService {
         roleApplied: app.job.jobTitle,
         dateApplied: app.createdAt,
         roleMatchScore: matchScore,
-        location: workLocation 
-          ? (typeof workLocation === 'object' && !Array.isArray(workLocation) 
-              ? (workLocation as any).city || (workLocation as any).country || JSON.stringify(workLocation) 
-              : String(workLocation))
-          : (app.professional.country || 'Not specified'),
+        location: workLocation
+          ? typeof workLocation === 'object' && !Array.isArray(workLocation)
+            ? (workLocation as any).city ||
+              (workLocation as any).country ||
+              JSON.stringify(workLocation)
+            : String(workLocation)
+          : app.professional.country || 'Not specified',
         hiringStatus: app.status,
       };
     });
@@ -464,11 +516,24 @@ export class OrganisationService {
     };
   }
 
-  async updateApplicationStatus(userId: string, applicationId: string, status: string) {
-    const validStatuses = ['pending', 'shortlisted', 'under_review', 'rejected', 'accepted', 'hired'];
-    
+  async updateApplicationStatus(
+    userId: string,
+    applicationId: string,
+    status: string,
+  ) {
+    const validStatuses = [
+      'pending',
+      'shortlisted',
+      'under_review',
+      'rejected',
+      'accepted',
+      'hired',
+    ];
+
     if (!validStatuses.includes(status)) {
-      throw new BadRequestException(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
+      throw new BadRequestException(
+        `Invalid status. Must be one of: ${validStatuses.join(', ')}`,
+      );
     }
 
     const organisation = await this.prisma.organisation.findUnique({
@@ -508,9 +573,11 @@ export class OrganisationService {
 
   async updateJobStatus(userId: string, jobId: string, status: string) {
     const validStatuses = ['draft', 'published', 'paused', 'closed'];
-    
+
     if (!validStatuses.includes(status)) {
-      throw new BadRequestException(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
+      throw new BadRequestException(
+        `Invalid status. Must be one of: ${validStatuses.join(', ')}`,
+      );
     }
 
     const organisation = await this.prisma.organisation.findUnique({
@@ -581,7 +648,8 @@ export class OrganisationService {
           id: 'recruiter',
           name: 'Recruiter Plan',
           price: 299,
-          description: 'Full suite recruitment, onboarding and offboarding package',
+          description:
+            'Full suite recruitment, onboarding and offboarding package',
           features: [
             'Everything in Standard',
             'Recruitment suite',
@@ -612,7 +680,11 @@ export class OrganisationService {
     };
   }
 
-  async getHiredProfessionals(userId: string, page: number = 1, limit: number = 20) {
+  async getHiredProfessionals(
+    userId: string,
+    page: number = 1,
+    limit: number = 20,
+  ) {
     const organisation = await this.prisma.organisation.findUnique({
       where: { userId },
     });
@@ -682,7 +754,7 @@ export class OrganisationService {
     return {
       success: true,
       data: {
-        professionals: paginatedProfessionals.map(prof => ({
+        professionals: paginatedProfessionals.map((prof) => ({
           id: prof.id,
           userId: prof.userId,
           country: prof.country,
@@ -703,7 +775,11 @@ export class OrganisationService {
     };
   }
 
-  async hireProfessional(userId: string, professionalId: string, jobId?: string) {
+  async hireProfessional(
+    userId: string,
+    professionalId: string,
+    jobId?: string,
+  ) {
     const organisation = await this.prisma.organisation.findUnique({
       where: { userId },
     });
@@ -763,7 +839,11 @@ export class OrganisationService {
     };
   }
 
-  async setupOrganisation(userId: string, orgId: string, setupDto: OrganisationSetupDto) {
+  async setupOrganisation(
+    userId: string,
+    orgId: string,
+    setupDto: OrganisationSetupDto,
+  ) {
     // Verify user owns the organisation
     const organisation = await this.prisma.organisation.findUnique({
       where: { id: orgId },
@@ -774,12 +854,18 @@ export class OrganisationService {
     }
 
     if (organisation.userId !== userId) {
-      throw new ForbiddenException('You do not have permission to update this organisation');
+      throw new ForbiddenException(
+        'You do not have permission to update this organisation',
+      );
     }
 
     // Validate incorporation number if registered
     if (setupDto.incorporationStatus === 'registered') {
-      if (!setupDto.incorporationNumber || setupDto.incorporationNumber.length < 5 || setupDto.incorporationNumber.length > 20) {
+      if (
+        !setupDto.incorporationNumber ||
+        setupDto.incorporationNumber.length < 5 ||
+        setupDto.incorporationNumber.length > 20
+      ) {
         throw new BadRequestException('Invalid incorporation number format');
       }
     }
@@ -835,7 +921,11 @@ export class OrganisationService {
     };
   }
 
-  async requestVerification(userId: string, orgId: string, verificationDto: VerificationRequestDto) {
+  async requestVerification(
+    userId: string,
+    orgId: string,
+    verificationDto: VerificationRequestDto,
+  ) {
     // Verify user owns the organisation
     const organisation = await this.prisma.organisation.findUnique({
       where: { id: orgId },
@@ -846,15 +936,24 @@ export class OrganisationService {
     }
 
     if (organisation.userId !== userId) {
-      throw new ForbiddenException('You do not have permission to update this organisation');
+      throw new ForbiddenException(
+        'You do not have permission to update this organisation',
+      );
     }
 
     if (!organisation.setupCompleted) {
-      throw new BadRequestException('Organisation setup must be completed before requesting verification');
+      throw new BadRequestException(
+        'Organisation setup must be completed before requesting verification',
+      );
     }
 
     // Validate document types
-    const allowedTypes = ['certificate_of_incorporation', 'business_registration', 'tax_certificate', 'other'];
+    const allowedTypes = [
+      'certificate_of_incorporation',
+      'business_registration',
+      'tax_certificate',
+      'other',
+    ];
     for (const doc of verificationDto.documents) {
       if (!allowedTypes.includes(doc.type)) {
         throw new BadRequestException(`Invalid document type: ${doc.type}`);
@@ -866,14 +965,15 @@ export class OrganisationService {
     estimatedCompletionDate.setDate(estimatedCompletionDate.getDate() + 2);
 
     // Create verification request
-    const verificationRequest = await this.prisma.organisationVerification.create({
-      data: {
-        organisationId: orgId,
-        status: 'under_review',
-        documents: verificationDto.documents as any,
-        estimatedCompletionDate,
-      },
-    });
+    const verificationRequest =
+      await this.prisma.organisationVerification.create({
+        data: {
+          organisationId: orgId,
+          status: 'under_review',
+          documents: verificationDto.documents as any,
+          estimatedCompletionDate,
+        },
+      });
 
     // Update organisation verification status
     await this.prisma.organisation.update({
@@ -939,7 +1039,7 @@ export class OrganisationService {
       // In production, this would use the actual billing cycle from the payment
       const billingCycle = pendingPayment?.billingCycle || 'monthly';
       renewalDate = new Date(subscriptionStartDate);
-      
+
       if (billingCycle === 'monthly') {
         renewalDate.setMonth(renewalDate.getMonth() + 1);
       } else if (billingCycle === 'yearly') {
@@ -958,12 +1058,17 @@ export class OrganisationService {
         organisationId: organisation.id,
         organisationName: organisation.companyName,
         renewalDate: renewalDate ? renewalDate.toISOString() : null,
-        subscriptionStartDate: subscriptionStartDate ? subscriptionStartDate.toISOString() : null,
+        subscriptionStartDate: subscriptionStartDate
+          ? subscriptionStartDate.toISOString()
+          : null,
         // Payment method would come from a payment service integration
-        paymentMethod: subscriptionPlan !== 'starter' ? {
-          type: 'card',
-          last4: '4242', // Placeholder - would come from payment service
-        } : null,
+        paymentMethod:
+          subscriptionPlan !== 'starter'
+            ? {
+                type: 'card',
+                last4: '4242', // Placeholder - would come from payment service
+              }
+            : null,
       },
     };
   }
@@ -997,7 +1102,10 @@ export class OrganisationService {
         recruiter: 299,
         enterprise: 999,
       };
-      const amount = validatedPayment.amount || planPricing[validatedPayment.plan || subscriptionPlan] || 0;
+      const amount =
+        validatedPayment.amount ||
+        planPricing[validatedPayment.plan || subscriptionPlan] ||
+        0;
 
       billingHistory.push({
         id: validatedPayment.reference || `payment-${organisation.id}`,
@@ -1037,7 +1145,10 @@ export class OrganisationService {
     }
 
     // Sort by payment date (newest first)
-    billingHistory.sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime());
+    billingHistory.sort(
+      (a, b) =>
+        new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime(),
+    );
 
     return {
       success: true,
@@ -1049,9 +1160,11 @@ export class OrganisationService {
 
   async updateSubscription(userId: string, plan: string) {
     const validPlans = ['starter', 'standard', 'recruiter', 'enterprise'];
-    
+
     if (!validPlans.includes(plan)) {
-      throw new BadRequestException(`Invalid plan. Must be one of: ${validPlans.join(', ')}`);
+      throw new BadRequestException(
+        `Invalid plan. Must be one of: ${validPlans.join(', ')}`,
+      );
     }
 
     const organisation = await this.prisma.organisation.findUnique({
@@ -1086,15 +1199,19 @@ export class OrganisationService {
 
   async initiatePayment(userId: string, paymentDto: InitiatePaymentDto) {
     const validPlans = ['starter', 'standard', 'recruiter', 'enterprise'];
-    
+
     // Only allow organisation plans
     if (!validPlans.includes(paymentDto.plan)) {
-      throw new BadRequestException(`Invalid plan for organisation. Must be one of: ${validPlans.join(', ')}`);
+      throw new BadRequestException(
+        `Invalid plan for organisation. Must be one of: ${validPlans.join(', ')}`,
+      );
     }
 
     // Don't allow payment for starter plan (it's free)
     if (paymentDto.plan === 'starter') {
-      throw new BadRequestException('Starter plan is free and does not require payment');
+      throw new BadRequestException(
+        'Starter plan is free and does not require payment',
+      );
     }
 
     const organisation = await this.prisma.organisation.findUnique({
@@ -1195,7 +1312,9 @@ export class OrganisationService {
         experienceYears: createJobDto.experienceYears,
         jobLevel: createJobDto.jobLevel,
         pay: createJobDto.pay as any,
-        closingDate: createJobDto.closingDate ? new Date(createJobDto.closingDate) : null,
+        closingDate: createJobDto.closingDate
+          ? new Date(createJobDto.closingDate)
+          : null,
         description: createJobDto.description,
         requirements: createJobDto.requirements || [],
         applyCTA: createJobDto.applyCTA as any,
@@ -1211,4 +1330,3 @@ export class OrganisationService {
     };
   }
 }
-

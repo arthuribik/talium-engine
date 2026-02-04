@@ -7,4 +7,3 @@ export class ApplyJobDto {
   @IsOptional()
   applicationData?: any;
 }
-

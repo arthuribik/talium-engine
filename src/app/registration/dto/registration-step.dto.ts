@@ -1,4 +1,12 @@
-import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsNumber, IsObject, ValidateNested } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsBoolean,
+  IsNumber,
+  IsObject,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -30,12 +38,18 @@ class AddressDto {
 }
 
 export class RegistrationStepDto {
-  @ApiProperty({ description: 'Step number (1, 2, 3, 4, 5, 7, or 8)', example: 1 })
+  @ApiProperty({
+    description: 'Step number (1, 2, 3, 4, 5, 7, or 8)',
+    example: 1,
+  })
   @IsNumber()
   @IsNotEmpty()
   step: number;
 
-  @ApiPropertyOptional({ description: 'Registration ID (optional for steps 1 and 7, required for others)' })
+  @ApiPropertyOptional({
+    description:
+      'Registration ID (optional for steps 1 and 7, required for others)',
+  })
   @IsString()
   @IsOptional()
   id?: string;
@@ -147,4 +161,3 @@ export class RegistrationStepDto {
   @IsOptional()
   organisationCountry?: string;
 }
-

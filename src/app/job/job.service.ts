@@ -1,4 +1,9 @@
-import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../utility/prisma/prisma.service';
 import { CreateJobDto } from './dto/create-job.dto';
 import { ApplyJobDto } from './dto/apply-job.dto';
@@ -15,7 +20,11 @@ export class JobService {
     return organisation?.id || null;
   }
 
-  async createJob(userId: string, organisationId: string, createJobDto: CreateJobDto) {
+  async createJob(
+    userId: string,
+    organisationId: string,
+    createJobDto: CreateJobDto,
+  ) {
     // Verify organisation exists
     const organisation = await this.prisma.organisation.findUnique({
       where: { id: organisationId },
@@ -30,10 +39,14 @@ export class JobService {
 
     // Check if user is the organisation owner OR a member of the organisation
     const isOwner = organisation.userId === userId;
-    const isMember = organisation.members.some(member => member.userId === userId);
+    const isMember = organisation.members.some(
+      (member) => member.userId === userId,
+    );
 
     if (!isOwner && !isMember) {
-      throw new ForbiddenException('You do not have permission to create jobs for this organisation');
+      throw new ForbiddenException(
+        'You do not have permission to create jobs for this organisation',
+      );
     }
 
     // Create job
@@ -47,7 +60,9 @@ export class JobService {
         experienceYears: createJobDto.experienceYears,
         jobLevel: createJobDto.jobLevel,
         pay: createJobDto.pay as any,
-        closingDate: createJobDto.closingDate ? new Date(createJobDto.closingDate) : null,
+        closingDate: createJobDto.closingDate
+          ? new Date(createJobDto.closingDate)
+          : null,
         description: createJobDto.description,
         requirements: createJobDto.requirements,
         applyCTA: createJobDto.applyCTA as any,
@@ -92,7 +107,7 @@ export class JobService {
 
     return {
       success: true,
-      data: jobs.map(job => ({
+      data: jobs.map((job) => ({
         ...job,
         applicants: job.applications.length,
       })),
@@ -185,11 +200,13 @@ export class JobService {
     const applyCTA = job.applyCTA as any;
     if (applyCTA && applyCTA.requireVerification) {
       const requiredVerifications = applyCTA.requireVerification as string[];
-      
+
       // Check identity verification
       if (requiredVerifications.includes('Identity')) {
         if (professional.identityStatus !== 'verified') {
-          throw new BadRequestException('Identity verification is required to apply for this job');
+          throw new BadRequestException(
+            'Identity verification is required to apply for this job',
+          );
         }
       }
 
@@ -203,7 +220,9 @@ export class JobService {
         });
 
         if (!education) {
-          throw new BadRequestException('Education verification is required to apply for this job');
+          throw new BadRequestException(
+            'Education verification is required to apply for this job',
+          );
         }
       }
     }
@@ -238,7 +257,9 @@ export class JobService {
     }
 
     if (job.organisation.userId !== userId) {
-      throw new ForbiddenException('You do not have permission to publish this job');
+      throw new ForbiddenException(
+        'You do not have permission to publish this job',
+      );
     }
 
     const updated = await this.prisma.job.update({
@@ -255,4 +276,3 @@ export class JobService {
     };
   }
 }
-
