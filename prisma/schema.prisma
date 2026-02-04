@@ -85,240 +85,239 @@ enum EducationLevel {
 }
 
 model User {
-  id                String    @id @default(cuid())
-  email             String    @unique
+  id                String     @id @default(cuid())
+  email             String     @unique
   password          String
   firstName         String
   lastName          String
   phoneNumber       String?
   status            UserStatus @default(UNVERIFIED)
   userType          UserType
-  emailVerified     Boolean   @default(false)
+  emailVerified     Boolean    @default(false)
   emailVerifyToken  String?
   emailVerifyExpiry DateTime?
   resetToken        String?
   resetTokenExpiry  DateTime?
-  firstLogin        Boolean   @default(true)
-  twoFactorEnabled  Boolean   @default(false)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  firstLogin        Boolean    @default(true)
+  twoFactorEnabled  Boolean    @default(false)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
 
-  adminProfile      Admin?
-  organisation      Organisation?
-  professional      Professional?
+  adminProfile Admin?
+  organisation Organisation?
+  professional Professional?
 
   @@map("users")
 }
 
 model Admin {
-  id            String    @id @default(cuid())
-  userId        String    @unique
-  role          AdminRole @default(admin)
-  invitationToken String? @unique
+  id                  String    @id @default(cuid())
+  userId              String    @unique
+  role                AdminRole @default(admin)
+  invitationToken     String?   @unique
   invitationExpiresAt DateTime?
-  invitationSentAt DateTime?
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invitationSentAt    DateTime?
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("admins")
 }
 
 model Organisation {
-  id                    String    @id @default(cuid())
-  userId                String    @unique
-  companyName           String
-  country               String
-  isRegistered          Boolean   @default(false)
-  incorporationStatus   String?
+  id                     String             @id @default(cuid())
+  userId                 String             @unique
+  companyName            String
+  country                String
+  isRegistered           Boolean            @default(false)
+  incorporationStatus    String?
   countryOfIncorporation String?
-  incorporationNumber   String?
-  yearOfCommencement    Int?
-  industry              String?
-  companySize           String?
-  website               String?
-  description           String?
-  verificationStatus    VerificationStatus @default(not_activated)
-  setupCompleted        Boolean   @default(false)
-  profileCompleteness   Int       @default(0)
-  address               Json?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  incorporationNumber    String?
+  yearOfCommencement     Int?
+  industry               String?
+  companySize            String?
+  website                String?
+  description            String?
+  verificationStatus     VerificationStatus @default(not_activated)
+  setupCompleted         Boolean            @default(false)
+  profileCompleteness    Int                @default(0)
+  address                Json?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
 
-  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  verificationRequests  OrganisationVerification[]
-  jobs                  Job[]
-  members               OrganisationMember[]
+  user                 User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verificationRequests OrganisationVerification[]
+  jobs                 Job[]
+  members              OrganisationMember[]
 
   @@map("organisations")
 }
 
 model OrganisationMember {
-  id            String   @id @default(cuid())
+  id             String   @id @default(cuid())
   organisationId String
-  userId        String
-  role          OrgRole   @default(org_member)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  userId         String
+  role           OrgRole  @default(org_member)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  organisation  Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
 
   @@unique([organisationId, userId])
   @@map("organisation_members")
 }
 
 model OrganisationVerification {
-  id                    String    @id @default(cuid())
-  organisationId        String
-  status                VerificationStatus @default(under_review)
-  documents             Json
-  submittedAt           DateTime  @default(now())
+  id                      String             @id @default(cuid())
+  organisationId          String
+  status                  VerificationStatus @default(under_review)
+  documents               Json
+  submittedAt             DateTime           @default(now())
   estimatedCompletionDate DateTime?
-  reviewedAt            DateTime?
-  reviewedBy            String?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  reviewedAt              DateTime?
+  reviewedBy              String?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
 
-  organisation          Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
 
   @@map("organisation_verifications")
 }
 
 model Professional {
-  id                String    @id @default(cuid())
-  userId            String    @unique
-  country           String?
-  nationality       String?
-  dateOfBirth       DateTime?
-  description       String?
-  socialMedia       Json?
-  identityVerified  Boolean   @default(false)
-  identityStatus    VerificationStatus @default(not_activated)
-  setupCompleted    Boolean   @default(false)
-  profileCompleteness Int      @default(0)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id                  String             @id @default(cuid())
+  userId              String             @unique
+  country             String?
+  nationality         String?
+  dateOfBirth         DateTime?
+  description         String?
+  socialMedia         Json?
+  identityVerified    Boolean            @default(false)
+  identityStatus      VerificationStatus @default(not_activated)
+  setupCompleted      Boolean            @default(false)
+  profileCompleteness Int                @default(0)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   identityVerification IdentityVerification?
-  education         Education[]
-  workExperience    WorkExperience[]
-  jobApplications   JobApplication[]
+  education            Education[]
+  workExperience       WorkExperience[]
+  jobApplications      JobApplication[]
 
   @@map("professionals")
 }
 
 model IdentityVerification {
-  id              String    @id @default(cuid())
-  professionalId  String    @unique
-  nationality     String
-  idType          IDType
-  idNumber        String
-  dateOfBirth     DateTime
-  status          VerificationStatus @default(pending)
+  id                String             @id @default(cuid())
+  professionalId    String             @unique
+  nationality       String
+  idType            IDType
+  idNumber          String
+  dateOfBirth       DateTime
+  status            VerificationStatus @default(pending)
   livenessCheckData Json?
-  verifiedAt      DateTime?
-  reviewedBy      String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  verifiedAt        DateTime?
+  reviewedBy        String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
-  professional    Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
 
   @@map("identity_verifications")
 }
 
 model Education {
-  id                  String    @id @default(cuid())
-  professionalId      String
-  levelOfEducation    EducationLevel
-  institutionName     String
-  degreeType          String?
-  fieldOfStudy        String
-  startDate           String
-  endDate             String?
-  currentlyAttending  Boolean   @default(false)
-  grade               String?
-  costOfEducation     Float?
-  currency            String?
-  country             String
-  verificationStatus  VerificationStatus @default(pending)
+  id                    String             @id @default(cuid())
+  professionalId        String
+  levelOfEducation      EducationLevel
+  institutionName       String
+  degreeType            String?
+  fieldOfStudy          String
+  startDate             String
+  endDate               String?
+  currentlyAttending    Boolean            @default(false)
+  grade                 String?
+  costOfEducation       Float?
+  currency              String?
+  country               String
+  verificationStatus    VerificationStatus @default(pending)
   verificationDocuments Json?
-  verifiedAt          DateTime?
-  reviewedBy          String?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  verifiedAt            DateTime?
+  reviewedBy            String?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
 
-  professional        Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
 
   @@map("educations")
 }
 
 model WorkExperience {
-  id                  String    @id @default(cuid())
+  id                  String             @id @default(cuid())
   professionalId      String
-  organisationName     String
-  industry             String
-  location             Json
-  role                 String
-  employmentType       EmploymentType
-  workMode             WorkMode
-  startDate            String
-  endDate              String?
-  currentlyWorking     Boolean  @default(false)
-  responsibilities     String[]
-  achievements         String[]
-  paymentMode          String?
-  currency             String?
-  salaryRange          Json?
-  verificationStatus   VerificationStatus @default(pending)
-  verificationContact  Json?
-  verifiedAt           DateTime?
-  reviewedBy           String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  organisationName    String
+  industry            String
+  location            Json
+  role                String
+  employmentType      EmploymentType
+  workMode            WorkMode
+  startDate           String
+  endDate             String?
+  currentlyWorking    Boolean            @default(false)
+  responsibilities    String[]
+  achievements        String[]
+  paymentMode         String?
+  currency            String?
+  salaryRange         Json?
+  verificationStatus  VerificationStatus @default(pending)
+  verificationContact Json?
+  verifiedAt          DateTime?
+  reviewedBy          String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 
-  professional         Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
 
   @@map("work_experiences")
 }
 
 model Job {
-  id                String    @id @default(cuid())
-  organisationId    String
-  jobTitle          String
-  location          String
-  workMode          WorkMode
-  employmentType    EmploymentType
-  experienceYears  Int?
-  jobLevel          String?
-  pay               Json
-  closingDate       DateTime?
-  description       String
-  requirements      String[]
-  applyCTA          Json?
-  status            JobStatus @default(draft)
-  views             Int       @default(0)
-  postedBy          String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id              String         @id @default(cuid())
+  organisationId  String
+  jobTitle        String
+  location        String
+  workMode        WorkMode
+  employmentType  EmploymentType
+  experienceYears Int?
+  jobLevel        String?
+  pay             Json
+  closingDate     DateTime?
+  description     String
+  requirements    String[]
+  applyCTA        Json?
+  status          JobStatus      @default(draft)
+  views           Int            @default(0)
+  postedBy        String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
-  organisation      Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  applications      JobApplication[]
+  organisation Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  applications JobApplication[]
 
   @@map("jobs")
 }
 
 model JobApplication {
-  id                String    @id @default(cuid())
-  jobId             String
-  professionalId    String
-  applicationData   Json?
-  status            String    @default("pending")
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id              String   @id @default(cuid())
+  jobId           String
+  professionalId  String
+  applicationData Json?
+  status          String   @default("pending")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  job               Job         @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  professional      Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
 
   @@unique([jobId, professionalId])
   @@map("job_applications")
 }
-
