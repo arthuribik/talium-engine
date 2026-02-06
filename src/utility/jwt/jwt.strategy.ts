@@ -10,50 +10,67 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private configService: ConfigService,
     private prisma: PrismaService,
   ) {
+    const jwtSecret = configService.get<string>('JWT_SECRET') || 'default-secret';
+    
+    // Log warning if using default secret in production
+    if (process.env.NODE_ENV === 'production' && jwtSecret === 'default-secret') {
+      console.error('CRITICAL: Using default JWT_SECRET in production! This will cause authentication failures.');
+    }
+    
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('JWT_SECRET') || 'default-secret',
+      secretOrKey: jwtSecret,
     });
   }
 
   async validate(payload: any) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-      include: {
-        adminProfile: true,
-        organisation: true,
-        professional: true,
-      },
-    });
-
-    if (!user) {
-      throw new UnauthorizedException('User not found');
+    if (!payload || !payload.sub) {
+      throw new UnauthorizedException('Invalid token payload');
     }
 
-    // Admin users can access regardless of status (except SUSPENDED)
-    // Other users need to be ACTIVE, VERIFIED, or PENDING_INVITATION
-    if (user.status === 'SUSPENDED') {
-      throw new UnauthorizedException('Account is suspended');
-    }
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+        include: {
+          adminProfile: true,
+          organisation: true,
+          professional: true,
+        },
+      });
 
-    if (user.userType !== 'ADMIN') {
-      if (
-        user.status !== 'ACTIVE' &&
-        user.status !== 'VERIFIED' &&
-        user.status !== 'PENDING_INVITATION'
-      ) {
-        throw new UnauthorizedException('Account not verified or active');
+      if (!user) {
+        throw new UnauthorizedException('User not found');
       }
-    }
 
-    return {
-      userId: user.id,
-      email: user.email,
-      userType: user.userType,
-      adminProfile: user.adminProfile,
-      organisation: user.organisation,
-      professional: user.professional,
-    };
+      // Admin users can access regardless of status (except SUSPENDED)
+      // Other users need to be ACTIVE, VERIFIED, or PENDING_INVITATION
+      if (user.status === 'SUSPENDED') {
+        throw new UnauthorizedException('Account is suspended');
+      }
+
+      if (user.userType !== 'ADMIN') {
+        if (
+          user.status !== 'ACTIVE' &&
+          user.status !== 'VERIFIED' &&
+          user.status !== 'PENDING_INVITATION'
+        ) {
+          throw new UnauthorizedException('Account not verified or active');
+        }
+      }
+
+      return {
+        userId: user.id,
+        email: user.email,
+        userType: user.userType,
+        adminProfile: user.adminProfile,
+        organisation: user.organisation,
+        professional: user.professional,
+      };
+    } catch (error) {
+      // Log error for debugging
+      console.error('JWT validation error:', error);
+      throw error;
+    }
   }
 }

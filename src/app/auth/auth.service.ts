@@ -177,6 +177,10 @@ export class AuthService {
     const jwtSecret =
       this.configService.get<string>('JWT_SECRET') || 'default-secret';
 
+    if (!jwtSecret || jwtSecret === 'default-secret') {
+      console.warn('WARNING: Using default JWT_SECRET. This should be changed in production!');
+    }
+
     const accessToken = this.jwtService.sign(payload, {
       secret: jwtSecret,
       expiresIn: expiresInFormatted,

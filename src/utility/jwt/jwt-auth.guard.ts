@@ -17,9 +17,23 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 
   handleRequest(err: any, user: any, info: any, context: ExecutionContext) {
-    if (err || !user) {
-      throw err || new UnauthorizedException('Invalid or expired token');
+    if (err) {
+      console.error('JWT Auth Guard Error:', err.message || err);
+      throw err;
     }
+    
+    if (!user) {
+      const request = context.switchToHttp().getRequest();
+      const authHeader = request.headers.authorization;
+      console.error('JWT Auth Guard - No user found. Auth header:', authHeader ? 'Present' : 'Missing');
+      
+      if (info) {
+        console.error('JWT Auth Guard Info:', info.message || info);
+      }
+      
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+    
     return user;
   }
 }
