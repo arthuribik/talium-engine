@@ -44,7 +44,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       }
 
       // Admin users can access regardless of status (except SUSPENDED)
-      // Other users need to be ACTIVE, VERIFIED, or PENDING_INVITATION
+      // Other users need to be ACTIVE, VERIFIED, PENDING_INVITATION, or UNVERIFIED
+      // UNVERIFIED users can access their profile to complete setup
       if (user.status === 'SUSPENDED') {
         throw new UnauthorizedException('Account is suspended');
       }
@@ -53,7 +54,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         if (
           user.status !== 'ACTIVE' &&
           user.status !== 'VERIFIED' &&
-          user.status !== 'PENDING_INVITATION'
+          user.status !== 'PENDING_INVITATION' &&
+          user.status !== 'UNVERIFIED'
         ) {
           throw new UnauthorizedException('Account not verified or active');
         }
