@@ -489,12 +489,15 @@ export class ProfessionalService {
       throw new NotFoundException('Professional not found');
     }
 
+    // Type assertion to include description and socialMedia fields
+    const professionalWithExtras = professional as any;
+
     return {
       success: true,
       data: {
         ...professional,
-        description: professional.description || null,
-        socialMedia: (professional.socialMedia as any) || {},
+        description: professionalWithExtras.description || null,
+        socialMedia: professionalWithExtras.socialMedia || {},
       },
     };
   }
@@ -507,6 +510,9 @@ export class ProfessionalService {
     if (!professional) {
       throw new NotFoundException('Professional not found');
     }
+
+    // Type assertion to access description and socialMedia fields
+    const professionalWithExtras = professional as any;
 
     const updateData: any = {};
 
@@ -524,7 +530,7 @@ export class ProfessionalService {
     }
     if (updateDto.socialMedia !== undefined) {
       // Merge with existing social media
-      const currentSocialMedia = (professional.socialMedia as any) || {};
+      const currentSocialMedia = professionalWithExtras.socialMedia || {};
       updateData.socialMedia = {
         ...currentSocialMedia,
         ...updateDto.socialMedia,
@@ -537,12 +543,15 @@ export class ProfessionalService {
       data: updateData,
     });
 
+    // Type assertion for the updated result
+    const updatedWithExtras = updated as any;
+
     return {
       success: true,
       message: 'Profile updated successfully',
       data: {
         ...updated,
-        socialMedia: (updated.socialMedia as any) || {},
+        socialMedia: updatedWithExtras.socialMedia || {},
       },
     };
   }
