@@ -16,6 +16,12 @@ import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RegistrationStepDto } from './dto/registration-step-unified.dto';
+import { ResendEntity } from '../../utility/mail';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
+
+export enum AuthServiceEvents {
+  SEND_VERIFICATION_EMAIL = 'send_verification_email',
+}
 
 @Injectable()
 export class AuthService {
@@ -23,6 +29,8 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private mailer: ResendEntity,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   async register(registerDto: RegisterDto) {
@@ -70,8 +78,18 @@ export class AuthService {
       },
     });
 
-    // TODO: Send verification email with token
-    console.log(`Verification token: ${verificationToken}`);
+    const html = `
+      <h2>Welcome to Talium, ${user.firstName}!</h2>
+      <p>Thank you for registering. Please verify your email by entering this OTP (One Time Password).:</p>
+      <p><strong>${verificationToken}</strong></p>
+      <p>This OTP will expire in 24 hours.</p>
+    `;
+
+    this.eventEmitter.emit(AuthServiceEvents.SEND_VERIFICATION_EMAIL, {
+      to: user.email,
+      subject: 'Verify your email',
+      html: html,
+    });
 
     return {
       status: 'success',
@@ -127,8 +145,18 @@ export class AuthService {
       },
     });
 
-    // TODO: Send verification email with token
-    console.log(`Verification token: ${verificationToken}`);
+    const html = `
+      <h2>Welcome to Talium, ${user.firstName}!</h2>
+      <p>Thank you for registering. Please verify your email by entering the OTP (One Time Password).:</p>
+      <p><strong>${verificationToken}</strong></p>
+      <p>This OTP will expire in 24 hours.</p>
+    `;
+
+    this.eventEmitter.emit(AuthServiceEvents.SEND_VERIFICATION_EMAIL, {
+      to: user.email,
+      subject: 'Verify your email',
+      html: html,
+    });
 
     return {
       status: 'success',
@@ -178,7 +206,9 @@ export class AuthService {
       this.configService.get<string>('JWT_SECRET') || 'default-secret';
 
     if (!jwtSecret || jwtSecret === 'default-secret') {
-      console.warn('WARNING: Using default JWT_SECRET. This should be changed in production!');
+      console.warn(
+        'WARNING: Using default JWT_SECRET. This should be changed in production!',
+      );
     }
 
     const accessToken = this.jwtService.sign(payload, {
@@ -237,8 +267,19 @@ export class AuthService {
       },
     });
 
-    // TODO: Send reset email
-    console.log(`Reset token: ${resetToken}`);
+    const html = `
+      <h2>Hello ${user.firstName}!</h2>
+      <p>We got a request to reset your account password. Please verify your email by entering this OTP (One Time Password).:</p>
+      <p><strong>${resetToken}</strong></p>
+      <p>This OTP will expire in 1 hours.</p>
+      <p>If you did not request a password reset, please ignore this email.</p>
+    `;
+
+    this.eventEmitter.emit(AuthServiceEvents.SEND_VERIFICATION_EMAIL, {
+      to: user.email,
+      subject: 'Reset your password',
+      html: html,
+    });
 
     return {
       status: 'success',
@@ -276,7 +317,16 @@ export class AuthService {
       },
     });
 
-    // TODO: Send confirmation email
+    const html = `
+      <h2>Hello ${user.firstName}!</h2>
+      <p>Your password has been reset successfully. If you did not perform this action, please contact our support immediately.</p>
+    `;
+
+    this.eventEmitter.emit(AuthServiceEvents.SEND_VERIFICATION_EMAIL, {
+      to: user.email,
+      subject: 'Password reset successful',
+      html: html,
+    });
 
     return {
       status: 'success',
@@ -390,6 +440,18 @@ export class AuthService {
     // TODO: Send email with verification code
     // In production, use an email service (SendGrid, AWS SES, etc.)
     console.log(`Verification code for ${email}: ${code}`);
+    const html = `
+      <h2>Welcome to Talium, ${existingUser.firstName}!</h2> 
+      <p>Thank you for registering. Please verify your email by entering this OTP (One Time Password).:</p>
+      <p><strong>${code}</strong></p>
+      <p>This OTP will expire in 10 minutes.</p>
+    `;
+
+    this.eventEmitter.emit(AuthServiceEvents.SEND_VERIFICATION_EMAIL, {
+      to: existingUser.email,
+      subject: 'Verify your email',
+      html: html,
+    });
 
     return {
       status: 'success',
@@ -882,5 +944,11 @@ export class AuthService {
   // Get single registration (for admin)
   async getRegistrationForAdmin(registrationId: string): Promise<any> {
     return this.getRegistration(registrationId);
+  }
+
+  @OnEvent(AuthServiceEvents.SEND_VERIFICATION_EMAIL)
+  async handleSendVerificationEmailEvent(data: any) {
+    const sendEmailResult = await this.mailer.send(data, data.html);
+    console.log('Verification email sent:', sendEmailResult?.data?.id);
   }
 }

@@ -10,10 +10,14 @@ import { ProfessionalModule } from './app/professional/professional.module';
 import { JobModule } from './app/job/job.module';
 import { JwtAuthModule } from './utility/jwt/jwt.module';
 import { RegistrationModule } from './app/registration/registration.module';
+import { GlobalModule } from './global.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    EventEmitterModule.forRoot(),
+    GlobalModule,
     PrismaModule,
     JwtAuthModule,
     AuthModule,
