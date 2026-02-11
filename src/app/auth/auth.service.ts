@@ -101,10 +101,39 @@ export class AuthService {
   async createBusiness(createBusinessDto: CreateBusinessDto) {
     const existingUser = await this.prisma.user.findUnique({
       where: { email: createBusinessDto.email },
+      include: {
+        organisation: {
+          include: {
+            user: true,
+          },
+        },
+      },
     });
 
     if (existingUser) {
-      throw new ConflictException('Email already exists');
+      // Check if this is a registration in progress
+      let stepInfo = '';
+      if (existingUser.organisation) {
+        const currentStep = this.calculateCurrentStep(existingUser.organisation);
+        const stepLabels: { [key: number]: string } = {
+          1: 'Registration Status',
+          2: 'Incorporation Details',
+          3: 'Category',
+          4: 'Organisation Details',
+          5: 'Email Verification',
+          6: 'Preview',
+          7: 'Organisation Details',
+          8: 'Category',
+        };
+        stepInfo = ` The email was created during the "${stepLabels[currentStep] || `Step ${currentStep}`}" step of the registration process.`;
+      } else if (existingUser.userType === 'ORGANISATION') {
+        stepInfo = ' The email belongs to an existing organisation account.';
+      } else if (existingUser.userType === 'PROFESSIONAL') {
+        stepInfo = ' The email belongs to an existing professional account.';
+      } else {
+        stepInfo = ' The email belongs to an existing account.';
+      }
+      throw new ConflictException(`Email already exists.${stepInfo}`);
     }
 
     // Validate passwords match
