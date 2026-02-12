@@ -150,6 +150,11 @@ export class RegistrationStepDto {
   @IsOptional()
   organisationEmail?: string;
 
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  phoneNumber?: string;
+
   // Step 7 fields (non-registered)
   @ApiPropertyOptional()
   @IsString()

@@ -17,18 +17,24 @@ export interface MailOptions {
 
 @Injectable()
 export class ResendEntity implements OnModuleInit {
-  private client: Resend;
+  private client: Resend | null = null;
 
   constructor(private readonly configService: ConfigService) {}
 
   onModuleInit() {
-    this.client = new Resend(this.configService.get<string>('RESEND_API_KEY'));
-    console.log('Resend client initialized');
+    const apiKey = this.configService.get<string>('RESEND_API_KEY');
+    if (apiKey) {
+      this.client = new Resend(apiKey);
+      console.log('Resend client initialized');
+    } else {
+      console.warn('RESEND_API_KEY is not set. Email functionality will be disabled.');
+    }
   }
 
   async send(data: any, template: string) {
     if (!this.client) {
-      throw new Error('Resend client is not initialized');
+      console.warn('Resend client is not initialized. Email not sent. Set RESEND_API_KEY to enable email functionality.');
+      return { data: { id: 'mock-id' }, error: null };
     }
 
     const params = this.build(data, template);

@@ -16,6 +16,7 @@ import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RegistrationStepDto } from './dto/registration-step-unified.dto';
+import { FinalizeRegistrationDto } from './dto/finalize-registration.dto';
 import { ResendEntity } from '../../utility/mail';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 
@@ -111,6 +112,19 @@ export class AuthService {
     });
 
     if (existingUser) {
+      // Check if this is a registration in progress that can be finalized
+      if (existingUser.organisation) {
+        const isTempEmail = existingUser.email.includes('@registration.temp');
+        const isPendingRegistration = existingUser.organisation.companyName === 'Pending Registration';
+        
+        // If it's a registration in progress, suggest using finalize endpoint
+        if (isTempEmail || isPendingRegistration) {
+          throw new ConflictException(
+            'This email is part of a registration in progress. Please continue your registration or use the finalize endpoint to complete it.'
+          );
+        }
+      }
+      
       // Check if this is a registration in progress
       let stepInfo = '';
       if (existingUser.organisation) {
@@ -191,6 +205,82 @@ export class AuthService {
       status: 'success',
       message:
         'Registration successful. Please check your email to verify your account.',
+    };
+  }
+
+  async finalizeRegistration(finalizeDto: FinalizeRegistrationDto) {
+    const { registrationId, password, confirmPassword } = finalizeDto;
+
+    // Validate passwords match
+    if (password !== confirmPassword) {
+      throw new BadRequestException('Passwords do not match');
+    }
+
+    // Find the organisation and user
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { id: registrationId },
+      include: { user: true },
+    });
+
+    if (!organisation) {
+      throw new NotFoundException('Registration not found');
+    }
+
+    if (!organisation.user) {
+      throw new NotFoundException('User not found for this registration');
+    }
+
+    // Check if this is a registration in progress
+    // A registration is in progress if:
+    // 1. User status is UNVERIFIED (not yet activated)
+    // 2. OR user has a temp email
+    // 3. OR organisation setup is not completed
+    const isTempEmail = organisation.user.email.includes('@registration.temp');
+    const isUnverified = organisation.user.status === 'UNVERIFIED';
+    const setupNotCompleted = !organisation.setupCompleted;
+    
+    // Check if password was already set by user (not the auto-generated one)
+    // If user has a real email (not temp) and status is still UNVERIFIED, it's likely in progress
+    const isInProgress = isTempEmail || (isUnverified && setupNotCompleted);
+    
+    if (!isInProgress) {
+      // Check if user already has a proper account (verified or active status)
+      if (organisation.user.status === 'VERIFIED' || organisation.user.status === 'ACTIVE') {
+        throw new BadRequestException('This registration has already been finalized. Please log in with your credentials.');
+      }
+      throw new BadRequestException('This registration cannot be finalized. Please contact support.');
+    }
+
+    // Hash the new password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Update user with password and finalize
+    await this.prisma.user.update({
+      where: { id: organisation.userId },
+      data: {
+        password: hashedPassword,
+        firstName: finalizeDto.firstName || organisation.user.firstName,
+        lastName: finalizeDto.lastName || organisation.user.lastName,
+        status: 'VERIFIED', // Mark as verified after finalization
+        emailVerified: true, // Mark email as verified
+        firstLogin: false,
+        // Email and phoneNumber should already be set from step 5
+      },
+    });
+
+    // Update organisation to mark as finalized
+    const orgName = finalizeDto.companyName || organisation.companyName;
+    await this.prisma.organisation.update({
+      where: { id: organisation.id },
+      data: {
+        companyName: orgName !== 'Pending Registration' ? orgName : organisation.companyName,
+        setupCompleted: true, // Mark setup as completed
+      },
+    });
+
+    return {
+      status: 'success',
+      message: 'Registration finalized successfully. You can now log in.',
     };
   }
 
@@ -470,14 +560,14 @@ export class AuthService {
     // In production, use an email service (SendGrid, AWS SES, etc.)
     console.log(`Verification code for ${email}: ${code}`);
     const html = `
-      <h2>Welcome to Talium, ${existingUser.firstName}!</h2> 
-      <p>Thank you for registering. Please verify your email by entering this OTP (One Time Password).:</p>
+      <h2>Welcome to Talium!</h2> 
+      <p>Thank you for registering. Please verify your email by entering this OTP (One Time Password):</p>
       <p><strong>${code}</strong></p>
       <p>This OTP will expire in 10 minutes.</p>
     `;
 
     this.eventEmitter.emit(AuthServiceEvents.SEND_VERIFICATION_EMAIL, {
-      to: existingUser.email,
+      to: email.toLowerCase(),
       subject: 'Verify your email',
       html: html,
     });
@@ -590,31 +680,86 @@ export class AuthService {
           updateData.country = data.countryOfIncorporation;
         break;
       case 3:
-        // Category data - store in description or create a separate field
-        // For now, we'll store it as part of the description
+        // Category data - store in description as JSON
+        // Need to preserve any existing text description
+        let existingCategoryData = {};
+        let existingTextDescription = '';
+        
         if (organisation.description) {
-          updateData.description = JSON.stringify({
-            ...JSON.parse(organisation.description || '{}'),
-            category: data.category,
-            schoolType: data.schoolType,
-            religiousOrgType: data.religiousOrgType,
-            internationalOrgType: data.internationalOrgType,
-            politicalPartyCountry: data.politicalPartyCountry,
-            associatedSchool: data.associatedSchool,
-          });
-        } else {
-          updateData.description = JSON.stringify({
-            category: data.category,
-            schoolType: data.schoolType,
-            religiousOrgType: data.religiousOrgType,
-            internationalOrgType: data.internationalOrgType,
-            politicalPartyCountry: data.politicalPartyCountry,
-            associatedSchool: data.associatedSchool,
-          });
+          try {
+            // Try to parse as JSON first
+            if (organisation.description.trim().startsWith('{')) {
+              const parsed = JSON.parse(organisation.description);
+              // Check if it has category data or is just text
+              if (parsed.category || parsed.schoolType || parsed.religiousOrgType) {
+                existingCategoryData = parsed;
+              } else {
+                // It's a text description, preserve it
+                existingTextDescription = organisation.description;
+              }
+            } else {
+              // It's a plain text description
+              existingTextDescription = organisation.description;
+            }
+          } catch (e) {
+            // Not valid JSON, treat as text description
+            existingTextDescription = organisation.description;
+          }
         }
+        
+        // Merge category data
+        const categoryData = {
+          ...existingCategoryData,
+          category: data.category,
+          schoolType: data.schoolType,
+          religiousOrgType: data.religiousOrgType,
+          internationalOrgType: data.internationalOrgType,
+          politicalPartyCountry: data.politicalPartyCountry,
+          associatedSchool: data.associatedSchool,
+        };
+        
+        // Store both category data and text description
+        updateData.description = JSON.stringify({
+          ...categoryData,
+          textDescription: existingTextDescription,
+        });
         break;
       case 4:
-        if (data.description) updateData.description = data.description;
+        // Preserve category data when updating description
+        let categoryDataToPreserve = {};
+        if (organisation.description) {
+          try {
+            if (organisation.description.trim().startsWith('{')) {
+              const parsed = JSON.parse(organisation.description);
+              // Extract category data if it exists
+              if (parsed.category || parsed.schoolType || parsed.religiousOrgType) {
+                categoryDataToPreserve = {
+                  category: parsed.category,
+                  schoolType: parsed.schoolType,
+                  religiousOrgType: parsed.religiousOrgType,
+                  internationalOrgType: parsed.internationalOrgType,
+                  politicalPartyCountry: parsed.politicalPartyCountry,
+                  associatedSchool: parsed.associatedSchool,
+                };
+              }
+            }
+          } catch (e) {
+            // Not JSON, ignore
+          }
+        }
+        
+        // Update description - preserve category data if it exists
+        if (data.description) {
+          if (Object.keys(categoryDataToPreserve).length > 0) {
+            updateData.description = JSON.stringify({
+              ...categoryDataToPreserve,
+              textDescription: data.description,
+            });
+          } else {
+            updateData.description = data.description;
+          }
+        }
+        
         if (data.otherName) updateData.companyName = data.otherName;
         if (data.industry) updateData.industry = data.industry;
         if (data.headquartersCity || data.headquartersCountry) {
@@ -632,12 +777,27 @@ export class AuthService {
         }
         break;
       case 5:
-        // Update user email if provided
-        if (data.organisationEmail && organisation.user) {
-          await this.prisma.user.update({
-            where: { id: organisation.userId },
-            data: { email: data.organisationEmail },
-          });
+        // Update user email and phone number if provided
+        if (organisation.user) {
+          const userUpdateData: any = {};
+          if (data.organisationEmail) {
+            userUpdateData.email = data.organisationEmail;
+          }
+          if (data.phoneNumber) {
+            userUpdateData.phoneNumber = data.phoneNumber;
+          }
+          
+          if (Object.keys(userUpdateData).length > 0) {
+            await this.prisma.user.update({
+              where: { id: organisation.userId },
+              data: userUpdateData,
+            });
+            // Refresh organisation to get updated user data
+            organisation = await this.prisma.organisation.findUnique({
+              where: { id: organisation.id },
+              include: { user: true },
+            });
+          }
         }
         break;
       case 7:
@@ -657,30 +817,52 @@ export class AuthService {
         break;
       case 8:
         // Category data for non-registered
+        // Need to preserve any existing text description
+        let existingCategoryData8 = {};
+        let existingTextDescription8 = '';
+        
         if (organisation.description) {
-          const existingDesc =
-            typeof organisation.description === 'string'
-              ? JSON.parse(organisation.description)
-              : organisation.description;
-          updateData.description = JSON.stringify({
-            ...existingDesc,
-            category: data.category,
-            schoolType: data.schoolType,
-            religiousOrgType: data.religiousOrgType,
-            internationalOrgType: data.internationalOrgType,
-            politicalPartyCountry: data.politicalPartyCountry,
-            associatedSchool: data.associatedSchool,
-          });
-        } else {
-          updateData.description = JSON.stringify({
-            category: data.category,
-            schoolType: data.schoolType,
-            religiousOrgType: data.religiousOrgType,
-            internationalOrgType: data.internationalOrgType,
-            politicalPartyCountry: data.politicalPartyCountry,
-            associatedSchool: data.associatedSchool,
-          });
+          try {
+            // Try to parse as JSON first
+            if (organisation.description.trim().startsWith('{')) {
+              const parsed = JSON.parse(organisation.description);
+              // Check if it has category data or is just text
+              if (parsed.category || parsed.schoolType || parsed.religiousOrgType) {
+                existingCategoryData8 = parsed;
+                // Preserve text description if it exists
+                if (parsed.textDescription) {
+                  existingTextDescription8 = parsed.textDescription;
+                }
+              } else {
+                // It's a text description, preserve it
+                existingTextDescription8 = organisation.description;
+              }
+            } else {
+              // It's a plain text description
+              existingTextDescription8 = organisation.description;
+            }
+          } catch (e) {
+            // Not valid JSON, treat as text description
+            existingTextDescription8 = organisation.description;
+          }
         }
+        
+        // Merge category data
+        const categoryData8 = {
+          ...existingCategoryData8,
+          category: data.category,
+          schoolType: data.schoolType,
+          religiousOrgType: data.religiousOrgType,
+          internationalOrgType: data.internationalOrgType,
+          politicalPartyCountry: data.politicalPartyCountry,
+          associatedSchool: data.associatedSchool,
+        };
+        
+        // Store both category data and text description
+        updateData.description = JSON.stringify({
+          ...categoryData8,
+          textDescription: existingTextDescription8,
+        });
         break;
       default:
         throw new BadRequestException(`Invalid step number: ${step}`);
@@ -691,6 +873,13 @@ export class AuthService {
       organisation = await this.prisma.organisation.update({
         where: { id: organisation.id },
         data: updateData,
+        include: { user: true },
+      });
+    } else if (step === 5) {
+      // For step 5, refresh organisation even if no updateData (email was updated separately)
+      organisation = await this.prisma.organisation.findUnique({
+        where: { id: organisation.id },
+        include: { user: true },
       });
     }
 
@@ -731,10 +920,16 @@ export class AuthService {
         break;
       case 3:
       case 8:
-        const desc =
-          typeof organisation.description === 'string'
-            ? JSON.parse(organisation.description || '{}')
-            : organisation.description || {};
+        let desc: any = {};
+        if (organisation.description) {
+          try {
+            if (organisation.description.trim().startsWith('{')) {
+              desc = JSON.parse(organisation.description || '{}');
+            }
+          } catch (e) {
+            // Not JSON, ignore
+          }
+        }
         stepData = {
           category: desc.category,
           schoolType: desc.schoolType,
@@ -745,8 +940,20 @@ export class AuthService {
         };
         break;
       case 4:
+        // Extract text description from JSON if it exists
+        let textDescription = organisation.description;
+        if (organisation.description) {
+          try {
+            if (organisation.description.trim().startsWith('{')) {
+              const parsed = JSON.parse(organisation.description);
+              textDescription = parsed.textDescription || organisation.description;
+            }
+          } catch (e) {
+            // Not JSON, use as is
+          }
+        }
         stepData = {
-          description: organisation.description,
+          description: textDescription,
           industry: organisation.industry,
           headquartersCity: organisation.address?.city,
           headquartersCountry: organisation.address?.country,
@@ -762,13 +969,26 @@ export class AuthService {
         });
         stepData = {
           organisationEmail: user?.email,
+          phoneNumber: user?.phoneNumber,
         };
         break;
       case 7:
+        // Extract text description from JSON if it exists
+        let textDescription7 = organisation.description;
+        if (organisation.description) {
+          try {
+            if (organisation.description.trim().startsWith('{')) {
+              const parsed = JSON.parse(organisation.description);
+              textDescription7 = parsed.textDescription || organisation.description;
+            }
+          } catch (e) {
+            // Not JSON, use as is
+          }
+        }
         stepData = {
           organisationName: organisation.companyName,
           organisationCountry: organisation.country,
-          description: organisation.description,
+          description: textDescription7,
           industry: organisation.industry,
           foundedDate: organisation.yearOfCommencement
             ? `${organisation.yearOfCommencement}-01-01`
@@ -798,17 +1018,23 @@ export class AuthService {
 
     // Parse description if it contains JSON data
     let categoryData = {};
+    let textDescription = null;
     if (organisation.description) {
       try {
-        const parsed =
-          typeof organisation.description === 'string'
-            ? JSON.parse(organisation.description)
-            : organisation.description;
-        if (parsed.category) {
-          categoryData = parsed;
+        if (organisation.description.trim().startsWith('{')) {
+          const parsed = JSON.parse(organisation.description);
+          if (parsed.category || parsed.schoolType || parsed.religiousOrgType) {
+            categoryData = parsed;
+            textDescription = parsed.textDescription || null;
+          } else {
+            textDescription = organisation.description;
+          }
+        } else {
+          textDescription = organisation.description;
         }
       } catch (e) {
         // Not JSON, use as regular description
+        textDescription = organisation.description;
       }
     }
 
@@ -822,11 +1048,7 @@ export class AuthService {
       },
       step3: categoryData,
       step4: {
-        description:
-          typeof organisation.description === 'string' &&
-          !organisation.description.startsWith('{')
-            ? organisation.description
-            : null,
+        description: textDescription,
         industry: organisation.industry,
         headquartersCity: (organisation.address as any)?.city,
         headquartersCountry: (organisation.address as any)?.country,
@@ -837,15 +1059,12 @@ export class AuthService {
       },
       step5: {
         organisationEmail: organisation.user?.email,
+        phoneNumber: organisation.user?.phoneNumber,
       },
       step7: {
         organisationName: organisation.companyName,
         organisationCountry: organisation.country,
-        description:
-          typeof organisation.description === 'string' &&
-          !organisation.description.startsWith('{')
-            ? organisation.description
-            : null,
+        description: textDescription,
         industry: organisation.industry,
         foundedDate: organisation.yearOfCommencement
           ? `${organisation.yearOfCommencement}-01-01`

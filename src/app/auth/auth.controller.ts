@@ -17,6 +17,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RegistrationStepDto } from './dto/registration-step-unified.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { FinalizeRegistrationDto } from './dto/finalize-registration.dto';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -140,5 +141,19 @@ export class AuthController {
   @ApiResponse({ status: 404, description: 'Registration not found' })
   async getRegistration(@Param('id') id: string) {
     return this.authService.getRegistration(id);
+  }
+
+  @Post('registration/finalize')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Finalize registration with password',
+    description:
+      'Complete the registration process by setting the password for an existing registration in progress.',
+  })
+  @ApiResponse({ status: 200, description: 'Registration finalized successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid input or registration already finalized' })
+  @ApiResponse({ status: 404, description: 'Registration not found' })
+  async finalizeRegistration(@Body() finalizeDto: FinalizeRegistrationDto) {
+    return this.authService.finalizeRegistration(finalizeDto);
   }
 }
