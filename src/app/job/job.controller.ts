@@ -69,10 +69,17 @@ export class JobController {
   @Get(':jobId')
   @ApiOperation({ summary: 'Get a specific job' })
   @ApiParam({ name: 'jobId', description: 'Job ID' })
+  @ApiQuery({ name: 'isUniqueView', required: false, type: Boolean, description: 'Whether this is a unique view (tracked by frontend)' })
   @ApiResponse({ status: 200, description: 'Job retrieved successfully' })
   @ApiResponse({ status: 404, description: 'Job not found' })
-  async getJob(@Param('jobId') jobId: string) {
-    return this.jobService.getJob(jobId);
+  async getJob(
+    @Param('jobId') jobId: string,
+    @Request() req?: any,
+    @Query('isUniqueView') isUniqueView?: string,
+  ) {
+    const userId = req?.user?.userId || undefined;
+    const isUnique = isUniqueView === 'true' || isUniqueView === undefined;
+    return this.jobService.getJob(jobId, userId, isUnique);
   }
 
   @Post(':jobId/apply')

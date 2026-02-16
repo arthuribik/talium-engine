@@ -61,11 +61,13 @@ export class AdminService {
       },
     });
 
-    // Create admin profile
+    // Create admin profile with explicit role assignment
+    // Ensure role is properly set (not default)
+    const adminRole = inviteAdminDto.role || 'admin';
     const admin = await this.prisma.admin.create({
       data: {
         userId: user.id,
-        role: inviteAdminDto.role,
+        role: adminRole as any, // Explicitly set the role from DTO
         invitationToken,
         invitationExpiresAt,
         invitationSentAt: new Date(),
@@ -116,23 +118,25 @@ export class AdminService {
       10,
     );
 
-    // Update user
+    // Update user - ensure they are activated with proper status
     const user = await this.prisma.user.update({
       where: { id: admin.userId },
       data: {
         password: hashedPassword,
-        status: 'ACTIVE',
+        status: 'ACTIVE', // Explicitly set to ACTIVE (not PENDING_INVITATION)
         emailVerified: true,
         firstLogin: false,
       },
     });
 
-    // Delete invitation token
+    // Ensure admin role is properly maintained (safeguard)
+    // The role should already be set from invitation, but ensure it's correct
     await this.prisma.admin.update({
       where: { id: admin.id },
       data: {
         invitationToken: null,
         invitationExpiresAt: null,
+        // Role is already set from invitation, no need to update
       },
     });
 
@@ -694,8 +698,37 @@ export class AdminService {
 
   async getAllOrganisations(page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;
+    
+    // Filter out pending registrations (temp emails or "Pending Registration" company name)
+    const whereClause = {
+      AND: [
+        {
+          user: {
+            email: {
+              not: {
+                contains: '@registration.temp',
+              },
+            },
+          },
+        },
+        {
+          companyName: {
+            not: 'Pending Registration',
+          },
+        },
+        {
+          user: {
+            status: {
+              not: 'UNVERIFIED',
+            },
+          },
+        },
+      ],
+    };
+    
     const [organisations, total] = await Promise.all([
       this.prisma.organisation.findMany({
+        where: whereClause,
         skip,
         take: limit,
         include: {
@@ -707,16 +740,67 @@ export class AdminService {
               lastName: true,
             },
           },
+          jobs: {
+            select: {
+              id: true,
+              status: true,
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.organisation.count(),
+      this.prisma.organisation.count({ where: whereClause }),
     ]);
+
+    // Parse description and add job counts
+    const organisationsWithData = organisations.map((org) => {
+      // Parse description - can be JSON or plain text
+      let descriptionText = '';
+      let categoryData: any = {};
+      
+      if (org.description) {
+        try {
+          if (typeof org.description === 'string' && org.description.trim().startsWith('{')) {
+            // It's JSON, parse it
+            const parsed = JSON.parse(org.description);
+            // Extract text description
+            descriptionText = parsed.textDescription || '';
+            // Extract category data
+            if (parsed.category || parsed.schoolType || parsed.religiousOrgType) {
+              categoryData = {
+                category: parsed.category || null,
+                schoolType: parsed.schoolType || null,
+                religiousOrgType: parsed.religiousOrgType || null,
+                internationalOrgType: parsed.internationalOrgType || null,
+                politicalPartyCountry: parsed.politicalPartyCountry || null,
+                associatedSchool: parsed.associatedSchool || null,
+              };
+            }
+          } else {
+            // It's plain text
+            descriptionText = org.description;
+          }
+        } catch (e) {
+          // Not valid JSON, treat as plain text
+          descriptionText = org.description;
+        }
+      }
+
+      // Count published jobs
+      const publishedJobsCount = org.jobs.filter((job) => job.status === 'published').length;
+
+      return {
+        ...org,
+        description: descriptionText,
+        category: categoryData,
+        jobCount: publishedJobsCount,
+      };
+    });
 
     return {
       success: true,
       data: {
-        organisations,
+        organisations: organisationsWithData,
         pagination: {
           page,
           limit,
@@ -729,8 +813,24 @@ export class AdminService {
 
   async getAllProfessionals(page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;
+    
+    // Filter out unverified professionals (only show verified/active users)
+    const whereClause = {
+      user: {
+        status: {
+          in: ['VERIFIED', 'ACTIVE'],
+        },
+        email: {
+          not: {
+            contains: '@registration.temp',
+          },
+        },
+      },
+    };
+    
     const [professionals, total] = await Promise.all([
       this.prisma.professional.findMany({
+        where: whereClause,
         skip,
         take: limit,
         include: {
@@ -747,7 +847,7 @@ export class AdminService {
         },
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.professional.count(),
+      this.prisma.professional.count({ where: whereClause }),
     ]);
 
     return {
@@ -778,8 +878,12 @@ export class AdminService {
           },
         },
         identityVerification: true,
-        education: true,
-        workExperience: true,
+        education: {
+          orderBy: { createdAt: 'desc' },
+        },
+        workExperience: {
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
 
@@ -787,9 +891,17 @@ export class AdminService {
       throw new NotFoundException('Professional not found');
     }
 
+    // Type assertion to include description and socialMedia fields
+    const professionalWithExtras = professional as any;
+
     return {
       success: true,
-      data: professional,
+      data: {
+        ...professional,
+        description: professionalWithExtras.description || null,
+        socialMedia: professionalWithExtras.socialMedia || {},
+        profileImage: professionalWithExtras.profileImage || null,
+      },
     };
   }
 

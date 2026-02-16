@@ -174,6 +174,46 @@ export class OrganisationController {
   }
 
   @Get('professionals')
+  @ApiOperation({ summary: 'Search and get professionals with filters' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'search', required: false, type: String, description: 'Search by name or email' })
+  @ApiQuery({ name: 'jobTitle', required: false, type: String, description: 'Filter by job title' })
+  @ApiQuery({ name: 'country', required: false, type: String, description: 'Filter by country' })
+  @ApiQuery({ name: 'city', required: false, type: String, description: 'Filter by city' })
+  @ApiQuery({ name: 'verified', required: false, type: Boolean, description: 'Filter by verified profile' })
+  @ApiQuery({ name: 'minExperience', required: false, type: Number, description: 'Minimum years of experience' })
+  @ApiResponse({
+    status: 200,
+    description: 'Professionals retrieved successfully',
+  })
+  async searchProfessionals(
+    @Request() req,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+    @Query('jobTitle') jobTitle?: string,
+    @Query('country') country?: string,
+    @Query('city') city?: string,
+    @Query('verified') verified?: string,
+    @Query('minExperience') minExperience?: string,
+  ) {
+    return this.organisationService.searchProfessionals(
+      req.user.userId,
+      {
+        page: page ? parseInt(page) : 1,
+        limit: limit ? parseInt(limit) : 20,
+        search: search || '',
+        jobTitle: jobTitle || '',
+        country: country || '',
+        city: city || '',
+        verified: verified === 'true',
+        minExperience: minExperience ? parseInt(minExperience) : undefined,
+      },
+    );
+  }
+
+  @Get('professionals/hired')
   @ApiOperation({ summary: 'Get hired professionals' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
@@ -194,25 +234,49 @@ export class OrganisationController {
   }
 
   @Post('professionals/:professionalId/hire')
-  @ApiOperation({ summary: 'Hire a professional' })
+  @ApiOperation({ summary: 'Hire a professional (Direct Scout)' })
   @ApiParam({ name: 'professionalId', description: 'Professional ID' })
   @ApiQuery({
     name: 'jobId',
     required: false,
     type: String,
-    description: 'Job ID if hiring for specific job',
+    description: 'Optional job ID if hiring for a specific job',
   })
-  @ApiResponse({ status: 201, description: 'Professional hired successfully' })
+  @ApiResponse({ status: 200, description: 'Professional hired successfully' })
   @ApiResponse({ status: 404, description: 'Professional not found' })
   async hireProfessional(
     @Request() req,
     @Param('professionalId') professionalId: string,
     @Query('jobId') jobId?: string,
+    @Body() body?: { jobTitle?: string; message?: string },
   ) {
     return this.organisationService.hireProfessional(
       req.user.userId,
       professionalId,
       jobId,
+      body?.jobTitle,
+      body?.message,
+    );
+  }
+
+  @Post('professionals/:professionalId/message')
+  @ApiOperation({ summary: 'Send a message to a professional' })
+  @ApiParam({ name: 'professionalId', description: 'Professional ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Message sent successfully',
+  })
+  async sendMessageToProfessional(
+    @Request() req,
+    @Param('professionalId') professionalId: string,
+    @Body() body: { subject?: string; message: string; jobTitle?: string },
+  ) {
+    return this.organisationService.sendMessageToProfessional(
+      req.user.userId,
+      professionalId,
+      body.message,
+      body.subject,
+      body.jobTitle,
     );
   }
 

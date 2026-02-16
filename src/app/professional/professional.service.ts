@@ -473,6 +473,7 @@ export class ProfessionalService {
             lastName: true,
             status: true,
             phoneNumber: true,
+            createdAt: true,
           },
         },
         identityVerification: true,
@@ -552,6 +553,79 @@ export class ProfessionalService {
       data: {
         ...updated,
         socialMedia: updatedWithExtras.socialMedia || {},
+      },
+    };
+  }
+
+  async getHeadhuntOffers(userId: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+      include: {
+        user: {
+          select: {
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    // Get all job applications with status 'hired' (direct scouts)
+    const hiredApplications = await this.prisma.jobApplication.findMany({
+      where: {
+        professionalId: professional.id,
+        status: 'hired',
+      },
+      include: {
+        job: {
+          include: {
+            organisation: {
+              include: {
+                user: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    // Format as headhunt offers
+    const offers = hiredApplications.map((app) => {
+      const org = app.job?.organisation;
+      const firstName = (professional as any).user?.firstName || 'Professional';
+      
+      // Format message as per requirements
+      const message = `Dear ${firstName}, You have been headhunted by ${org?.companyName || 'an organisation'}, ${org?.industry ? `a ${org.industry} company` : 'a company'} operating ${org?.country ? `in ${org.country}` : 'globally'} for the position of ${app.job?.jobTitle || 'a role'}${app.job?.location ? ` for their ${app.job.location} Office` : ''}. Please review the offer and Job description and respond as soon as possible.`;
+
+      return {
+        id: app.id,
+        organisationName: org?.companyName,
+        organisationId: org?.id,
+        jobTitle: app.job?.jobTitle,
+        jobId: app.jobId,
+        location: app.job?.location,
+        message,
+        sentAt: app.createdAt,
+        status: app.status,
+      };
+    });
+
+    return {
+      success: true,
+      data: {
+        offers,
       },
     };
   }

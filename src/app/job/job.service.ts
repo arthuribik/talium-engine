@@ -114,7 +114,7 @@ export class JobService {
     };
   }
 
-  async getJob(jobId: string) {
+  async getJob(jobId: string, userId?: string, isUniqueView: boolean = true) {
     const job = await this.prisma.job.findUnique({
       where: { id: jobId },
       include: {
@@ -131,6 +131,7 @@ export class JobService {
             id: true,
             status: true,
             createdAt: true,
+            professionalId: true,
           },
         },
       },
@@ -140,21 +141,66 @@ export class JobService {
       throw new NotFoundException('Job not found');
     }
 
-    // Increment views
-    await this.prisma.job.update({
-      where: { id: jobId },
-      data: {
-        views: {
-          increment: 1,
-        },
-      },
-    });
+    // Check if user has applied (if userId is provided)
+    let hasApplied = false;
+    let professionalId: string | null = null;
+    if (userId) {
+      const professional = await this.prisma.professional.findFirst({
+        where: { userId },
+      });
+      
+      if (professional) {
+        professionalId = professional.id;
+        const application = job.applications.find(
+          (app) => app.professionalId === professional.id
+        );
+        hasApplied = !!application;
+      }
+    }
+
+    // Track unique views - only increment if this is a unique view
+    // Frontend should track views in localStorage and only send isUniqueView=true once per device
+    // For professionals, we can also check if they've already applied (they've definitely viewed)
+    if (isUniqueView) {
+      // For professionals: check if they've already applied (which means they've viewed)
+      // If they haven't applied, this is likely their first view, so increment
+      if (professionalId) {
+        const hasAppliedBefore = job.applications.some(
+          (app) => app.professionalId === professionalId
+        );
+        
+        // Only increment if they haven't applied (first view)
+        // If they have applied, they've already been counted
+        if (!hasAppliedBefore) {
+          await this.prisma.job.update({
+            where: { id: jobId },
+            data: {
+              views: {
+                increment: 1,
+              },
+            },
+          });
+        }
+      } else {
+        // For non-professionals, rely on frontend localStorage tracking
+        // Frontend will only send isUniqueView=true once per device
+        await this.prisma.job.update({
+          where: { id: jobId },
+          data: {
+            views: {
+              increment: 1,
+            },
+          },
+        });
+      }
+    }
 
     return {
       success: true,
       data: {
         ...job,
         applicants: job.applications.length,
+        hasApplied,
       },
     };
   }

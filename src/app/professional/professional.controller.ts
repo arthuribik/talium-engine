@@ -90,6 +90,16 @@ export class ProfessionalController {
     return this.professionalService.getApplications(req.user.userId);
   }
 
+  @Get('headhunt-offers')
+  @ApiOperation({ summary: 'Get headhunt offers (Direct Scout messages)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Headhunt offers retrieved successfully',
+  })
+  async getHeadhuntOffers(@Request() req) {
+    return this.professionalService.getHeadhuntOffers(req.user.userId);
+  }
+
   @Get('privacy-settings')
   @ApiOperation({ summary: 'Get privacy settings' })
   @ApiResponse({
