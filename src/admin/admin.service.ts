@@ -700,7 +700,7 @@ export class AdminService {
     const skip = (page - 1) * limit;
     
     // Filter out pending registrations (temp emails or "Pending Registration" company name)
-    const whereClause = {
+    const whereClause: any = {
       AND: [
         {
           user: {
@@ -709,18 +709,14 @@ export class AdminService {
                 contains: '@registration.temp',
               },
             },
+            status: {
+              not: 'UNVERIFIED',
+            },
           },
         },
         {
           companyName: {
             not: 'Pending Registration',
-          },
-        },
-        {
-          user: {
-            status: {
-              not: 'UNVERIFIED',
-            },
           },
         },
       ],
@@ -787,7 +783,7 @@ export class AdminService {
       }
 
       // Count published jobs
-      const publishedJobsCount = org.jobs.filter((job) => job.status === 'published').length;
+      const publishedJobsCount = (org as any).jobs?.filter((job: any) => job.status === 'published').length || 0;
 
       return {
         ...org,
@@ -815,7 +811,7 @@ export class AdminService {
     const skip = (page - 1) * limit;
     
     // Filter out unverified professionals (only show verified/active users)
-    const whereClause = {
+    const whereClause: any = {
       user: {
         status: {
           in: ['VERIFIED', 'ACTIVE'],
