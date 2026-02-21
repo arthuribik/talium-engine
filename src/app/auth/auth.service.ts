@@ -80,7 +80,7 @@ export class AuthService {
     });
 
     const html = `
-      <h2>Welcome to Talium, ${user.firstName}!</h2>
+      <h2>Welcome to taldium, ${user.firstName}!</h2>
       <p>Thank you for registering. Please verify your email by entering this OTP (One Time Password).:</p>
       <p><strong>${verificationToken}</strong></p>
       <p>This OTP will expire in 24 hours.</p>
@@ -189,7 +189,7 @@ export class AuthService {
     });
 
     const html = `
-      <h2>Welcome to Talium, ${user.firstName}!</h2>
+      <h2>Welcome to taldium, ${user.firstName}!</h2>
       <p>Thank you for registering. Please verify your email by entering the OTP (One Time Password).:</p>
       <p><strong>${verificationToken}</strong></p>
       <p>This OTP will expire in 24 hours.</p>
@@ -560,7 +560,7 @@ export class AuthService {
     // In production, use an email service (SendGrid, AWS SES, etc.)
     console.log(`Verification code for ${email}: ${code}`);
     const html = `
-      <h2>Welcome to Talium!</h2> 
+      <h2>Welcome to taldium!</h2> 
       <p>Thank you for registering. Please verify your email by entering this OTP (One Time Password):</p>
       <p><strong>${code}</strong></p>
       <p>This OTP will expire in 10 minutes.</p>

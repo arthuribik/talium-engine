@@ -106,6 +106,7 @@ model User {
   adminProfile Admin?
   organisation Organisation?
   professional Professional?
+  organisationMembers OrganisationMember[]
 
   @@map("users")
 }
@@ -147,6 +148,7 @@ model Organisation {
   verificationRequests OrganisationVerification[]
   jobs                 Job[]
   members              OrganisationMember[]
+  invitations          OrganisationInvitation[]
 
   @@map("organisations")
 }
@@ -160,9 +162,25 @@ model OrganisationMember {
   updatedAt      DateTime @updatedAt
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([organisationId, userId])
   @@map("organisation_members")
+}
+
+model OrganisationInvitation {
+  id             String   @id @default(cuid())
+  organisationId String
+  email          String
+  role           OrgRole
+  token          String   @unique
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, email])
+  @@map("organisation_invitations")
 }
 
 model OrganisationVerification {
@@ -192,6 +210,7 @@ model Professional {
   socialMedia         Json?
   identityVerified    Boolean            @default(false)
   identityStatus      VerificationStatus @default(not_activated)
+  verifiedByAdminAt   DateTime?
   setupCompleted      Boolean            @default(false)
   profileCompleteness Int                @default(0)
   createdAt           DateTime           @default(now())
@@ -284,6 +303,7 @@ model Job {
   id              String         @id @default(cuid())
   organisationId  String
   jobTitle        String
+  department      String?
   location        String
   workMode        WorkMode
   employmentType  EmploymentType
@@ -291,7 +311,7 @@ model Job {
   jobLevel        String?
   pay             Json
   closingDate     DateTime?
-  description     String
+  description     String         @default("")
   requirements    String[]
   applyCTA        Json?
   status          JobStatus      @default(draft)

@@ -10,7 +10,7 @@ async function bootstrap() {
   const allowedOrigins = [
     'http://localhost:5231',
     'http://localhost:3000',
-    'https://talium-webapp.onrender.com',
+    'https://taldium-webapp.onrender.com',
     process.env.FRONTEND_URL,
   ].filter(Boolean);
 

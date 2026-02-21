@@ -43,6 +43,14 @@ export class ProfessionalController {
     return this.professionalService.getProfile(req.user.userId);
   }
 
+  @Get('verification-status')
+  @ApiOperation({ summary: 'Get verification status per section' })
+  @ApiResponse({ status: 200, description: 'Verification status retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Professional not found' })
+  async getVerificationStatus(@Request() req) {
+    return this.professionalService.getVerificationStatus(req.user.userId);
+  }
+
   @Put('profile')
   @ApiOperation({ summary: 'Update professional profile' })
   @ApiResponse({ status: 200, description: 'Profile updated successfully' })

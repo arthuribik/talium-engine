@@ -52,7 +52,7 @@ export class ResendEntity implements OnModuleInit {
   build(data: any, html: string) {
     const from = `${this.configService.get<string>(
       'MAIL_SENDER',
-      'Talium Notifications',
+      'taldium Notifications',
     )} <${this.configService.get<string>('MAIL_FROM', 'no-reply@notifications.yebox.net')}>`;
 
     return {

@@ -809,21 +809,15 @@ export class AdminService {
 
   async getAllProfessionals(page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;
-    
-    // Filter out unverified professionals (only show verified/active users)
+
     const whereClause: any = {
       user: {
-        status: {
-          in: ['VERIFIED', 'ACTIVE'],
-        },
         email: {
-          not: {
-            contains: '@registration.temp',
-          },
+          not: { contains: '@registration.temp' },
         },
       },
     };
-    
+
     const [professionals, total] = await Promise.all([
       this.prisma.professional.findMany({
         where: whereClause,
@@ -1580,13 +1574,17 @@ export class AdminService {
     type: 'identity' | 'education' | 'experience',
     verificationId: string,
     adminUserId: string,
+    status: 'verified' | 'rejected' = 'verified',
   ) {
+    const isVerified = status === 'verified';
+    const verifiedAt = isVerified ? new Date() : null;
+
     if (type === 'identity') {
       await this.prisma.identityVerification.update({
         where: { id: verificationId },
         data: {
-          status: 'verified',
-          verifiedAt: new Date(),
+          status: status as any,
+          verifiedAt,
           reviewedBy: adminUserId,
         },
       });
@@ -1594,16 +1592,16 @@ export class AdminService {
       await this.prisma.professional.update({
         where: { id: profId },
         data: {
-          identityStatus: 'verified',
-          identityVerified: true,
+          identityStatus: (status as any) || undefined,
+          identityVerified: isVerified,
         },
       });
     } else if (type === 'education') {
       await this.prisma.education.update({
         where: { id: verificationId },
         data: {
-          verificationStatus: 'verified',
-          verifiedAt: new Date(),
+          verificationStatus: status as any,
+          verifiedAt,
           reviewedBy: adminUserId,
         },
       });
@@ -1611,8 +1609,8 @@ export class AdminService {
       await this.prisma.workExperience.update({
         where: { id: verificationId },
         data: {
-          verificationStatus: 'verified',
-          verifiedAt: new Date(),
+          verificationStatus: status as any,
+          verifiedAt,
           reviewedBy: adminUserId,
         },
       });
@@ -1620,7 +1618,52 @@ export class AdminService {
 
     return {
       success: true,
-      message: 'Verification approved successfully',
+      message: status === 'verified' ? 'Verification approved successfully' : 'Verification rejected',
+    };
+  }
+
+  async markProfessionalVerificationComplete(profId: string, adminUserId: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { id: profId },
+      include: {
+        identityVerification: true,
+        education: true,
+        workExperience: true,
+      },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    const identityOk =
+      professional.identityStatus === 'verified' && professional.identityVerification?.status === 'verified';
+    const educationOk =
+      professional.education.length === 0 ||
+      professional.education.every(
+        (e) => e.verificationStatus === 'verified' || e.verificationStatus === 'rejected',
+      );
+    const workOk =
+      professional.workExperience.length === 0 ||
+      professional.workExperience.every(
+        (w) => w.verificationStatus === 'verified' || w.verificationStatus === 'rejected',
+      );
+
+    if (!identityOk || !educationOk || !workOk) {
+      throw new BadRequestException(
+        'Cannot verify professional: identity must be verified and all education/work items must be verified or rejected (no pending).',
+      );
+    }
+
+    const updated = await this.prisma.professional.update({
+      where: { id: profId },
+      data: { verifiedByAdminAt: new Date() },
+    });
+
+    return {
+      success: true,
+      message: 'Professional marked as fully verified',
+      data: { verifiedByAdminAt: updated.verifiedByAdminAt },
     };
   }
 

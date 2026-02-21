@@ -8,7 +8,7 @@ async function main() {
 
   try {
     const password = process.env.DEFAULT_ADMIN_PASSWORD || 'Admin@123';
-    const email = 'admin@talium.com';
+    const email = 'admin@taldium.com';
     const role = 'super_admin';
 
     // Check if email exists

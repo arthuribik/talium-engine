@@ -3,6 +3,7 @@ import {
   Put,
   Post,
   Get,
+  Delete,
   Param,
   Body,
   UseGuards,
@@ -24,6 +25,10 @@ import { VerificationRequestDto } from './dto/verification-request.dto';
 import { UpdateOrganisationProfileDto } from './dto/update-profile.dto';
 import { CreateJobDto } from '../job/dto/create-job.dto';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
+import { ScoutSearchDto } from './dto/scout-search.dto';
+import { SendScoutRequestDto } from './dto/send-scout-request.dto';
+import { InviteMemberDto } from './dto/invite-member.dto';
+import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 
 @ApiTags('Organisation')
 @Controller('organisation')
@@ -59,13 +64,24 @@ export class OrganisationController {
 
   @Get('dashboard/stats')
   @ApiOperation({ summary: 'Get organisation dashboard statistics' })
+  @ApiQuery({ name: 'country', required: false, type: String, description: 'Filter by job location country' })
+  @ApiQuery({ name: 'workMode', required: false, type: String, description: 'Filter by work mode (remote, hybrid, on_site, global_remote)' })
+  @ApiQuery({ name: 'status', required: false, type: String, description: 'Filter by job status (draft, published, paused, closed)' })
   @ApiResponse({
     status: 200,
     description: 'Statistics retrieved successfully',
   })
   @ApiResponse({ status: 404, description: 'Organisation not found' })
-  async getDashboardStats(@Request() req) {
-    return this.organisationService.getDashboardStats(req.user.userId);
+  async getDashboardStats(
+    @Request() req,
+    @Query('country') country?: string,
+    @Query('workMode') workMode?: string,
+    @Query('status') status?: string,
+  ) {
+    const filters = [country, workMode, status].some(Boolean)
+      ? { country, workMode, status }
+      : undefined;
+    return this.organisationService.getDashboardStats(req.user.userId, filters);
   }
 
   @Get('jobs')
@@ -173,12 +189,32 @@ export class OrganisationController {
     );
   }
 
+  @Post('professionals/scout-search')
+  @ApiOperation({ summary: 'Start direct scout: search professionals by job criteria' })
+  @ApiResponse({ status: 200, description: 'Scout search results (professionals list)' })
+  async scoutSearch(@Request() req, @Body() body: ScoutSearchDto) {
+    return this.organisationService.scoutSearch(req.user.userId, {
+      jobTitle: body.jobTitle,
+      searchType: body.searchType,
+      location: body.location,
+      domicile: body.domicile,
+      workMode: body.workMode,
+      employmentType: body.employmentType,
+      currency: body.currency,
+      salaryMin: body.salaryMin,
+      salaryMax: body.salaryMax,
+      benefits: body.benefits,
+      description: body.description,
+    });
+  }
+
   @Get('professionals')
   @ApiOperation({ summary: 'Search and get professionals with filters' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'search', required: false, type: String, description: 'Search by name or email' })
   @ApiQuery({ name: 'jobTitle', required: false, type: String, description: 'Filter by job title' })
+  @ApiQuery({ name: 'searchType', required: false, type: String, description: 'strict or partial for job title match' })
   @ApiQuery({ name: 'country', required: false, type: String, description: 'Filter by country' })
   @ApiQuery({ name: 'city', required: false, type: String, description: 'Filter by city' })
   @ApiQuery({ name: 'verified', required: false, type: Boolean, description: 'Filter by verified profile' })
@@ -193,6 +229,7 @@ export class OrganisationController {
     @Query('limit') limit?: string,
     @Query('search') search?: string,
     @Query('jobTitle') jobTitle?: string,
+    @Query('searchType') searchType?: 'strict' | 'partial',
     @Query('country') country?: string,
     @Query('city') city?: string,
     @Query('verified') verified?: string,
@@ -205,6 +242,7 @@ export class OrganisationController {
         limit: limit ? parseInt(limit) : 20,
         search: search || '',
         jobTitle: jobTitle || '',
+        searchType: searchType || 'partial',
         country: country || '',
         city: city || '',
         verified: verified === 'true',
@@ -233,8 +271,23 @@ export class OrganisationController {
     );
   }
 
+  @Get('professionals/:professionalId')
+  @ApiOperation({ summary: 'Get professional profile by ID (for organisation view)' })
+  @ApiParam({ name: 'professionalId', description: 'Professional ID' })
+  @ApiResponse({ status: 200, description: 'Professional profile' })
+  @ApiResponse({ status: 404, description: 'Professional not found' })
+  async getProfessionalById(
+    @Request() req,
+    @Param('professionalId') professionalId: string,
+  ) {
+    return this.organisationService.getProfessionalByIdForOrganisation(
+      req.user.userId,
+      professionalId,
+    );
+  }
+
   @Post('professionals/:professionalId/hire')
-  @ApiOperation({ summary: 'Hire a professional (Direct Scout)' })
+  @ApiOperation({ summary: 'Send scout request (hire) to a professional' })
   @ApiParam({ name: 'professionalId', description: 'Professional ID' })
   @ApiQuery({
     name: 'jobId',
@@ -242,21 +295,23 @@ export class OrganisationController {
     type: String,
     description: 'Optional job ID if hiring for a specific job',
   })
-  @ApiResponse({ status: 200, description: 'Professional hired successfully' })
+  @ApiResponse({ status: 200, description: 'Scout request sent successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid request (missing required fields)' })
   @ApiResponse({ status: 404, description: 'Professional not found' })
   async hireProfessional(
     @Request() req,
     @Param('professionalId') professionalId: string,
+    @Body() body: SendScoutRequestDto,
     @Query('jobId') jobId?: string,
-    @Body() body?: { jobTitle?: string; message?: string },
   ) {
-    return this.organisationService.hireProfessional(
-      req.user.userId,
-      professionalId,
-      jobId,
-      body?.jobTitle,
-      body?.message,
-    );
+    return this.organisationService.hireProfessional(req.user.userId, professionalId, jobId, {
+      jobTitle: body.jobTitle,
+      employmentType: body.employmentType,
+      workMode: body.workMode,
+      location: body.location,
+      description: body.description,
+      message: body.message,
+    });
   }
 
   @Post('professionals/:professionalId/message')
@@ -278,6 +333,56 @@ export class OrganisationController {
       body.subject,
       body.jobTitle,
     );
+  }
+
+  @Get('team/stats')
+  @ApiOperation({ summary: 'Get team statistics' })
+  @ApiResponse({ status: 200, description: 'Team stats retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Organisation not found' })
+  async getTeamStats(@Request() req) {
+    return this.organisationService.getTeamStats(req.user.userId);
+  }
+
+  @Get('team/members')
+  @ApiOperation({ summary: 'Get team members list' })
+  @ApiResponse({ status: 200, description: 'Team members retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Organisation not found' })
+  async getTeamMembers(@Request() req) {
+    return this.organisationService.getTeamMembers(req.user.userId);
+  }
+
+  @Post('team/invite')
+  @ApiOperation({ summary: 'Invite a team member' })
+  @ApiResponse({ status: 200, description: 'Invitation sent successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid input or already member/invited' })
+  @ApiResponse({ status: 404, description: 'Organisation not found' })
+  async inviteMember(@Request() req, @Body() body: InviteMemberDto) {
+    return this.organisationService.inviteMember(req.user.userId, {
+      email: body.email,
+      role: body.role,
+    });
+  }
+
+  @Put('team/members/:memberId/role')
+  @ApiOperation({ summary: 'Update a member role' })
+  @ApiParam({ name: 'memberId', description: 'Organisation member ID' })
+  @ApiResponse({ status: 200, description: 'Role updated successfully' })
+  @ApiResponse({ status: 404, description: 'Member not found' })
+  async updateMemberRole(
+    @Request() req,
+    @Param('memberId') memberId: string,
+    @Body() body: UpdateMemberRoleDto,
+  ) {
+    return this.organisationService.updateMemberRole(req.user.userId, memberId, body.role);
+  }
+
+  @Delete('team/members/:memberId')
+  @ApiOperation({ summary: 'Remove a team member' })
+  @ApiParam({ name: 'memberId', description: 'Organisation member ID' })
+  @ApiResponse({ status: 200, description: 'Member removed successfully' })
+  @ApiResponse({ status: 404, description: 'Member not found' })
+  async removeMember(@Request() req, @Param('memberId') memberId: string) {
+    return this.organisationService.removeMember(req.user.userId, memberId);
   }
 
   @Get('billing')

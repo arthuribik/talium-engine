@@ -303,24 +303,49 @@ export class AdminController {
   @Put('professionals/:profId/verify/:type/:verificationId')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Approve professional verification' })
+  @ApiOperation({ summary: 'Approve or reject professional verification' })
   @ApiParam({ name: 'profId', description: 'Professional ID' })
   @ApiParam({ name: 'type', enum: ['identity', 'education', 'experience'] })
   @ApiParam({ name: 'verificationId', description: 'Verification ID' })
   @ApiResponse({
     status: 200,
-    description: 'Verification approved successfully',
+    description: 'Verification status updated successfully',
   })
   async approveProfessionalVerification(
     @Request() req,
     @Param('profId') profId: string,
     @Param('type') type: 'identity' | 'education' | 'experience',
     @Param('verificationId') verificationId: string,
+    @Body() body: { status?: 'verified' | 'rejected' },
   ) {
     return this.adminService.approveProfessionalVerification(
       profId,
       type,
       verificationId,
+      req.user.userId,
+      body?.status ?? 'verified',
+    );
+  }
+
+  @Put('professionals/:profId/verification-complete')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Mark professional as fully verified when all sections are done' })
+  @ApiParam({ name: 'profId', description: 'Professional ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Professional marked as fully verified',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Not all sections verified or rejected',
+  })
+  async markProfessionalVerificationComplete(
+    @Request() req,
+    @Param('profId') profId: string,
+  ) {
+    return this.adminService.markProfessionalVerificationComplete(
+      profId,
       req.user.userId,
     );
   }

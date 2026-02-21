@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   BadRequestException,
   NotFoundException,
+  Inject,
 } from '@nestjs/common';
 import { PrismaService } from '../../utility/prisma/prisma.service';
 import { OrganisationSetupDto } from './dto/organisation-setup.dto';
@@ -15,7 +16,7 @@ import { ResendEntity } from '../../utility/mail';
 @Injectable()
 export class OrganisationService {
   constructor(
-    private prisma: PrismaService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
     private readonly mailService: ResendEntity,
   ) {}
 
@@ -281,7 +282,10 @@ export class OrganisationService {
     };
   }
 
-  async getDashboardStats(userId: string) {
+  async getDashboardStats(
+    userId: string,
+    filters?: { country?: string; workMode?: string; status?: string },
+  ) {
     const organisation = await this.prisma.organisation.findUnique({
       where: { userId },
     });
@@ -290,9 +294,26 @@ export class OrganisationService {
       throw new NotFoundException('Organisation not found');
     }
 
-    // Get all jobs for this organisation
+    const baseWhere: any = { organisationId: organisation.id };
+    if (filters?.country) {
+      baseWhere.location = { contains: filters.country, mode: 'insensitive' };
+    }
+    if (filters?.workMode) {
+      baseWhere.workMode = filters.workMode;
+    }
+    if (filters?.status) {
+      baseWhere.status = filters.status;
+    }
+
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const sixtyDaysAgo = new Date(now);
+    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+
+    // All jobs (filtered) with applications
     const jobs = await this.prisma.job.findMany({
-      where: { organisationId: organisation.id },
+      where: baseWhere,
       include: {
         applications: {
           select: {
@@ -305,13 +326,41 @@ export class OrganisationService {
       },
     });
 
+    // Previous period jobs (same filters, created 30–60 days ago) for % change
+    const previousPeriodWhere = {
+      ...baseWhere,
+      createdAt: { gte: sixtyDaysAgo, lt: thirtyDaysAgo },
+    };
+    const currentPeriodWhere = {
+      ...baseWhere,
+      createdAt: { gte: thirtyDaysAgo },
+    };
+
+    const [previousJobs, currentPeriodJobs] = await Promise.all([
+      this.prisma.job.findMany({
+        where: previousPeriodWhere,
+        include: {
+          applications: {
+            select: { id: true, status: true, professionalId: true },
+          },
+        },
+      }),
+      this.prisma.job.findMany({
+        where: currentPeriodWhere,
+        include: {
+          applications: {
+            select: { id: true, status: true, professionalId: true },
+          },
+        },
+      }),
+    ]);
+
     const totalJobs = jobs.length;
     const publishedJobs = jobs.filter((j) => j.status === 'published').length;
     const activeJobs = jobs.filter(
       (j) => j.status === 'published' || j.status === 'paused',
     ).length;
 
-    // Calculate applications stats
     let totalApplications = 0;
     let pendingApplications = 0;
     let hiredProfessionals = 0;
@@ -332,6 +381,65 @@ export class OrganisationService {
       }
     }
 
+    const prevTotalJobs = previousJobs.length;
+    const currTotalJobs = currentPeriodJobs.length;
+    let prevApplications = 0;
+    let currApplications = 0;
+    let prevHires = 0;
+    let currHires = 0;
+    const prevHiredIds = new Set<string>();
+    const currHiredIds = new Set<string>();
+
+    for (const job of previousJobs) {
+      prevApplications += job.applications.length;
+      job.applications.forEach((a) => {
+        if (a.status === 'hired' || a.status === 'accepted') {
+          prevHiredIds.add(a.professionalId);
+        }
+      });
+    }
+    prevHires = prevHiredIds.size;
+    for (const job of currentPeriodJobs) {
+      currApplications += job.applications.length;
+      job.applications.forEach((a) => {
+        if (a.status === 'hired' || a.status === 'accepted') {
+          currHiredIds.add(a.professionalId);
+        }
+      });
+    }
+    currHires = currHiredIds.size;
+
+    const percent = (curr: number, prev: number) =>
+      prev === 0 ? (curr > 0 ? 100 : 0) : Math.round(((curr - prev) / prev) * 100);
+    const totalJobsChange = percent(currTotalJobs, prevTotalJobs);
+    const activeJobsPrev = previousJobs.filter(
+      (j) => j.status === 'published' || j.status === 'paused',
+    ).length;
+    const activeJobsCurr = currentPeriodJobs.filter(
+      (j) => j.status === 'published' || j.status === 'paused',
+    ).length;
+    const activeJobsChange = percent(activeJobsCurr, activeJobsPrev);
+    const totalApplicationsChange = percent(currApplications, prevApplications);
+    const totalHiresChange = percent(currHires, prevHires);
+
+    // Recent job postings (filtered, ordered by createdAt desc)
+    const recentJobs = await this.prisma.job.findMany({
+      where: baseWhere,
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      include: {
+        applications: { select: { id: true } },
+      },
+    });
+
+    const recentJobPostings = recentJobs.map((job) => ({
+      id: job.id,
+      jobTitle: job.jobTitle,
+      applicants: job.applications.length,
+      postedDate: job.createdAt,
+      status: job.status,
+    }));
+
     return {
       success: true,
       data: {
@@ -340,9 +448,48 @@ export class OrganisationService {
         publishedJobs,
         totalApplications,
         pendingApplications,
-        hiredProfessionals: hiredProfessionalIds.size, // Unique professionals
+        hiredProfessionals: hiredProfessionalIds.size,
+        totalJobsChange,
+        activeJobsChange,
+        totalApplicationsChange,
+        totalHiresChange,
+        recentJobPostings,
       },
     };
+  }
+
+  private formatSalaryRange(pay: any): string {
+    if (!pay || typeof pay !== 'object') return '—';
+    const sym = pay.currency === 'USD' ? '$' : pay.currency === 'GBP' ? '£' : pay.currency === 'EUR' ? '€' : pay.currency || '';
+    const period = pay.period === 'Per annum' ? 'yearly' : pay.period === 'Per month' ? 'monthly' : pay.period || '';
+    const periodStr = period ? ` / ${period}` : '';
+    const fmt = (n: number) => Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+    if (pay.min != null && pay.max != null) {
+      return `${sym}${fmt(Number(pay.min))} - ${sym}${fmt(Number(pay.max))}${periodStr}`;
+    }
+    const amount = pay.amount != null ? Number(pay.amount) : null;
+    if (amount == null) return '—';
+    return `${sym}${fmt(amount)}${periodStr}`;
+  }
+
+  private workModeLabel(mode: string): string {
+    const map: Record<string, string> = {
+      remote: 'Location Remote',
+      hybrid: 'Hybrid',
+      on_site: 'On Site',
+      global_remote: 'Global Remote',
+    };
+    return map[mode] || mode;
+  }
+
+  private employmentTypeLabel(type: string): string {
+    const map: Record<string, string> = {
+      full_time: 'Full Time',
+      part_time: 'Part Time',
+      contract: 'Contract',
+      internship: 'Internship',
+    };
+    return map[type] || type;
   }
 
   async getOrganisationJobs(
@@ -388,13 +535,32 @@ export class OrganisationService {
       }),
     ]);
 
+    const payJson = (job: any) => (typeof job.pay === 'string' ? (() => { try { return JSON.parse(job.pay); } catch { return {}; } })() : job.pay) || {};
+
     return {
       success: true,
       data: {
-        jobs: jobs.map((job) => ({
-          ...job,
-          applicants: job.applications.length,
-        })),
+        jobs: jobs.map((job) => {
+          const pay = payJson(job);
+          return {
+            id: job.id,
+            jobTitle: job.jobTitle,
+            category: job.department ?? null,
+            jobLevel: job.jobLevel ?? null,
+            employmentType: job.employmentType,
+            workMode: job.workMode,
+            workModeLabel: this.workModeLabel(job.workMode),
+            employmentTypeLabel: this.employmentTypeLabel(job.employmentType),
+            location: job.location,
+            salaryRange: this.formatSalaryRange(pay),
+            applicantsCount: job.applications.length,
+            applicants: job.applications.length,
+            status: job.status,
+            postedDate: job.createdAt,
+            createdAt: job.createdAt,
+            organisation: job.organisation,
+          };
+        }),
         pagination: {
           page,
           limit,
@@ -748,6 +914,7 @@ export class OrganisationService {
       limit: number;
       search?: string;
       jobTitle?: string;
+      searchType?: 'strict' | 'partial';
       country?: string;
       city?: string;
       verified?: boolean;
@@ -762,7 +929,7 @@ export class OrganisationService {
       throw new NotFoundException('Organisation not found');
     }
 
-    const { page, limit, search, jobTitle, country, city, verified, minExperience } = filters;
+    const { page, limit, search, jobTitle, searchType, country, city, verified, minExperience } = filters;
     const skip = (page - 1) * limit;
 
     // Build where clause for filtering
@@ -774,30 +941,29 @@ export class OrganisationService {
       },
     };
 
-    // Search by name or email
+    // Search by name, email, country, or profession (role in work experience)
     if (search) {
       where.OR = [
         {
           user: {
-            firstName: {
-              contains: search,
-              mode: 'insensitive',
-            },
+            firstName: { contains: search, mode: 'insensitive' },
           },
         },
         {
           user: {
-            lastName: {
-              contains: search,
-              mode: 'insensitive',
-            },
+            lastName: { contains: search, mode: 'insensitive' },
           },
         },
         {
           user: {
-            email: {
-              contains: search,
-              mode: 'insensitive',
+            email: { contains: search, mode: 'insensitive' },
+          },
+        },
+        { country: { contains: search, mode: 'insensitive' } },
+        {
+          workExperience: {
+            some: {
+              role: { contains: search, mode: 'insensitive' },
             },
           },
         },
@@ -894,15 +1060,36 @@ export class OrganisationService {
         };
       })
       .filter((prof) => {
+        // Single search box: match name, email, profession, or location
+        if (search) {
+          const term = search.toLowerCase();
+          const name = `${(prof as any).user?.firstName || ''} ${(prof as any).user?.lastName || ''}`.trim().toLowerCase();
+          const email = ((prof as any).user?.email || '').toLowerCase();
+          const professionMatch = prof.profession?.toLowerCase().includes(term);
+          const countryMatch = (prof.country || '').toLowerCase().includes(term);
+          const cityMatch = prof.workExperience?.some((exp) => {
+            const loc = (exp as any).location;
+            const c = (loc?.city || '').toLowerCase();
+            return c && c.includes(term);
+          });
+          if (!(name.includes(term) || email.includes(term) || professionMatch || countryMatch || cityMatch)) {
+            return false;
+          }
+        }
+
         // Filter by minimum experience
         if (minExperience !== undefined && prof.yearsOfExperience < minExperience) {
           return false;
         }
 
-        // Filter by job title (profession)
+        // Filter by job title (profession) - strict = exact match, partial = contains
         if (jobTitle && prof.profession) {
-          if (!prof.profession.toLowerCase().includes(jobTitle.toLowerCase())) {
-            return false;
+          const title = jobTitle.toLowerCase().trim();
+          const role = prof.profession.toLowerCase();
+          if (searchType === 'strict') {
+            if (role !== title) return false;
+          } else {
+            if (!role.includes(title)) return false;
           }
         }
 
@@ -920,16 +1107,37 @@ export class OrganisationService {
         return true;
       });
 
-    // Get verification status
+    // Get verification status (percentage + label for badges)
     const getVerificationStatus = (prof: any) => {
-      const completeness = prof.profileCompleteness || 0;
+      const completeness = Math.min(100, prof.profileCompleteness || 0);
       if (prof.identityStatus === 'verified') {
-        return { percentage: completeness, status: 'Verified with Gov ID' };
+        return { percentage: Math.max(completeness, 100), status: 'Verified with Gov ID' };
       } else if (completeness >= 30) {
         return { percentage: completeness, status: 'Self Declared' };
       } else {
-        return { percentage: completeness, status: 'Pending' };
+        return { percentage: completeness || 20, status: 'Pending' };
       }
+    };
+
+    // Nationality display: use professional.nationality or derive from country
+    const getNationality = (prof: any) => {
+      if (prof.nationality) return prof.nationality;
+      const c = (prof.country || '').trim();
+      if (!c) return null;
+      const map: Record<string, string> = {
+        Nigeria: 'Nigerian',
+        'United States': 'American',
+        USA: 'American',
+        Germany: 'German',
+        'United Kingdom': 'British',
+        UK: 'British',
+        India: 'Indian',
+        Japan: 'Japanese',
+        Mexico: 'Mexican',
+        'United Arab Emirates': 'Emirati',
+        UAE: 'Emirati',
+      };
+      return map[c] || c;
     };
 
     return {
@@ -938,8 +1146,9 @@ export class OrganisationService {
         professionals: professionalsWithExperience.map((prof) => ({
           id: prof.id,
           userId: prof.userId,
-          name: `${prof.user.firstName} ${prof.user.lastName}`,
+          name: `${prof.user.firstName || ''} ${prof.user.lastName || ''}`.trim() || prof.user.email,
           email: prof.user.email,
+          nationality: getNationality(prof),
           location: {
             city: prof.workExperience?.[0]?.location
               ? (prof.workExperience[0].location as any).city || null
@@ -959,6 +1168,146 @@ export class OrganisationService {
           total: professionalsWithExperience.length,
           totalPages: Math.ceil(professionalsWithExperience.length / limit),
         },
+      },
+    };
+  }
+
+  async scoutSearch(userId: string, dto: {
+    jobTitle?: string;
+    searchType?: 'strict' | 'partial';
+    location?: string;
+    domicile?: string;
+    workMode?: string;
+    employmentType?: string;
+    currency?: string;
+    salaryMin?: number;
+    salaryMax?: number;
+    benefits?: string[];
+    description?: string;
+  }) {
+    const country = dto.location && dto.location.toLowerCase() !== 'global' ? dto.location : undefined;
+    let city: string | undefined;
+    if (dto.domicile && dto.domicile.trim()) {
+      const parts = dto.domicile.split(',').map((p) => p.trim()).filter(Boolean);
+      city = parts[0]; // e.g. "Lagos" from "Lagos, Nigeria"
+    }
+    return this.searchProfessionals(userId, {
+      page: 1,
+      limit: 100,
+      jobTitle: dto.jobTitle,
+      searchType: dto.searchType || 'partial',
+      country,
+      city,
+    });
+  }
+
+  async getProfessionalByIdForOrganisation(userId: string, professionalId: string) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+    const professional = await this.prisma.professional.findUnique({
+      where: { id: professionalId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            status: true,
+          },
+        },
+        identityVerification: true,
+        education: {
+          orderBy: { createdAt: 'desc' },
+        },
+        workExperience: {
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+    const profAny = professional as any;
+    const workExp = professional.workExperience || [];
+    let yearsOfExperience = 0;
+    if (workExp.length > 0) {
+      const earliest = workExp.reduce((min, e) => {
+        const d = new Date(e.startDate);
+        return !min || d < min ? d : min;
+      }, null as Date | null);
+      const latest = workExp.some((e) => e.currentlyWorking)
+        ? new Date()
+        : workExp.reduce((max, e) => {
+            const d = e.endDate ? new Date(e.endDate) : new Date();
+            return !max || d > max ? d : max;
+          }, null as Date | null) || new Date();
+      if (earliest) {
+        yearsOfExperience = Math.floor(
+          (latest.getTime() - earliest.getTime()) / (1000 * 60 * 60 * 24 * 365),
+        );
+      }
+    }
+    const profession =
+      workExp.length > 0 ? workExp[workExp.length - 1].role : null;
+    const getNationality = (p: any) => {
+      if (p.nationality) return p.nationality;
+      const c = (p.country || '').trim();
+      if (!c) return null;
+      const map: Record<string, string> = {
+        Nigeria: 'Nigerian',
+        'United States': 'American',
+        USA: 'American',
+        Germany: 'German',
+        'United Kingdom': 'British',
+        UK: 'British',
+        India: 'Indian',
+        Japan: 'Japanese',
+        Mexico: 'Mexican',
+        'United Arab Emirates': 'Emirati',
+        UAE: 'Emirati',
+      };
+      return map[c] || c;
+    };
+    const completeness = Math.min(100, professional.profileCompleteness || 0);
+    const verificationStatus =
+      professional.identityStatus === 'verified'
+        ? { percentage: 100, status: 'Verified with Gov ID' }
+        : completeness >= 30
+          ? { percentage: completeness, status: 'Self Declared' }
+          : { percentage: completeness || 20, status: 'Pending' };
+    const locationCity =
+      workExp[0]?.location && typeof workExp[0].location === 'object'
+        ? (workExp[0].location as any).city || null
+        : null;
+    return {
+      success: true,
+      data: {
+        id: professional.id,
+        userId: professional.userId,
+        name: `${professional.user.firstName || ''} ${professional.user.lastName || ''}`.trim() || professional.user.email,
+        email: professional.user.email,
+        country: professional.country,
+        nationality: getNationality(professional),
+        description: profAny.description || null,
+        socialMedia: profAny.socialMedia || {},
+        profileImage: profAny.profileImage || null,
+        profileCompleteness: professional.profileCompleteness,
+        identityStatus: professional.identityStatus,
+        yearsOfExperience,
+        profession: profession || 'Not specified',
+        location: {
+          city: locationCity,
+          country: professional.country,
+        },
+        verificationStatus,
+        user: professional.user,
+        education: professional.education,
+        workExperience: professional.workExperience,
       },
     };
   }
@@ -1121,13 +1470,50 @@ export class OrganisationService {
     };
   }
 
+  private buildScoutMessage(
+    organisation: { companyName: string; industry?: string | null; country?: string | null },
+    jobTitle?: string,
+    employmentType?: string,
+    workMode?: string,
+    location?: string,
+    description?: string,
+    message?: string,
+  ): string {
+    const orgIntro = organisation.companyName
+      ? `${organisation.companyName}${organisation.industry ? `, a ${organisation.industry} company` : ', a company'} operating ${organisation.country ? `in ${organisation.country}` : 'globally'}`
+      : 'our organisation';
+    let text = jobTitle
+      ? `You have been headhunted by ${orgIntro} for the position of ${jobTitle}.`
+      : message || 'We would like to connect with you.';
+    if (employmentType) text += `\n\nEmployment Type: ${employmentType}`;
+    if (workMode) text += `\nWork Mode: ${workMode}`;
+    if (location) text += `\nLocation: ${location}`;
+    if (description) text += `\n\nJob Description:\n${description}`;
+    if (message && jobTitle) text += `\n\n${message}`;
+    text += '\n\nPlease review the offer and Job description and respond as soon as possible.';
+    return text;
+  }
+
   async hireProfessional(
     userId: string,
     professionalId: string,
     jobId?: string,
-    jobTitle?: string,
-    message?: string,
+    body?: {
+      jobTitle?: string;
+      message?: string;
+      employmentType?: string;
+      workMode?: string;
+      location?: string;
+      description?: string;
+    },
   ) {
+    const jobTitle = body?.jobTitle;
+    const message = body?.message;
+    const employmentType = body?.employmentType;
+    const workMode = body?.workMode;
+    const location = body?.location;
+    const description = body?.description;
+
     const organisation = await this.prisma.organisation.findUnique({
       where: { userId },
     });
@@ -1165,12 +1551,12 @@ export class OrganisationService {
         data: { status: 'hired' },
       });
 
-      // Send message if provided
-      if (message || jobTitle) {
+      const scoutMessage = this.buildScoutMessage(organisation, jobTitle, employmentType, workMode, location, description, message);
+      if (scoutMessage) {
         await this.sendMessageToProfessional(
           userId,
           professionalId,
-          message || 'Congratulations! You have been hired.',
+          scoutMessage,
           'Hiring Notification',
           jobTitle,
         );
@@ -1187,28 +1573,18 @@ export class OrganisationService {
       };
     }
 
-    // If no jobId, create a direct scout (headhunt) offer
-    // First, try to find or create a placeholder job for direct scouts
-    // Or create a job application with a special status
-    // For now, we'll create a job application with status 'hired' even without a jobId
-    // This requires creating a dummy job or modifying the schema
-    // As a workaround, we'll send the message and store it in a way that can be retrieved
-    
-    // Send message/email if provided
-    if (message || jobTitle) {
+    // Direct scout (no jobId): send scout request email
+    const scoutMessage = this.buildScoutMessage(organisation, jobTitle, employmentType, workMode, location, description, message);
+    if (scoutMessage) {
       await this.sendMessageToProfessional(
         userId,
         professionalId,
-        message || 'We would like to hire you.',
+        scoutMessage,
         'Direct Scout - Hiring Opportunity',
         jobTitle,
       );
     }
 
-    // For direct scouts without a job, we need to create a job application
-    // Find the first published job from this organisation to attach the application to
-    // Or create a special "Direct Scout" job application
-    // For now, we'll create an application with a special marker
     const firstJob = await this.prisma.job.findFirst({
       where: {
         organisationId: organisation.id,
@@ -1217,7 +1593,6 @@ export class OrganisationService {
     });
 
     if (firstJob) {
-      // Create or update application with hired status
       await this.prisma.jobApplication.upsert({
         where: {
           jobId_professionalId: {
@@ -1236,6 +1611,10 @@ export class OrganisationService {
             isDirectScout: true,
             jobTitle: jobTitle || null,
             message: message || null,
+            employmentType: employmentType || null,
+            workMode: workMode || null,
+            location: location || null,
+            description: description || null,
           },
         },
       });
@@ -1243,11 +1622,200 @@ export class OrganisationService {
 
     return {
       success: true,
-      message: 'Professional hired successfully',
+      message: 'Scout request sent successfully',
       data: {
         professionalId,
         isDirectScout: !jobId,
       },
+    };
+  }
+
+  async getTeamStats(userId: string) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+      include: {
+        user: { select: { id: true } },
+        members: { select: { role: true } },
+      },
+    });
+    if (!organisation) throw new NotFoundException('Organisation not found');
+    const orgAdmins = organisation.members.filter((m) => m.role === 'org_admin').length;
+    const editors = organisation.members.filter((m) => m.role === 'org_recruiter').length;
+    const viewers = organisation.members.filter((m) => m.role === 'org_member').length;
+    return {
+      success: true,
+      data: {
+        totalMembers: 1 + organisation.members.length,
+        admins: 1 + orgAdmins,
+        editors,
+        viewers,
+      },
+    };
+  }
+
+  async getTeamMembers(userId: string) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            updatedAt: true,
+          },
+        },
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                updatedAt: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!organisation) throw new NotFoundException('Organisation not found');
+    const owner = {
+      id: 'owner',
+      memberId: null,
+      userId: organisation.user.id,
+      name: `${organisation.user.firstName} ${organisation.user.lastName}`.trim() || 'Owner',
+      email: organisation.user.email,
+      role: 'org_owner' as const,
+      joined: organisation.createdAt,
+      lastActive: organisation.user.updatedAt,
+    };
+    const members = organisation.members.map((m) => ({
+      id: m.id,
+      memberId: m.id,
+      userId: m.user.id,
+      name: `${m.user.firstName} ${m.user.lastName}`.trim() || m.user.email,
+      email: m.user.email,
+      role: m.role,
+      joined: m.createdAt,
+      lastActive: m.updatedAt,
+    }));
+    return {
+      success: true,
+      data: {
+        members: [owner, ...members],
+      },
+    };
+  }
+
+  async inviteMember(userId: string, dto: { email: string; role: string }) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+    });
+    if (!organisation) throw new NotFoundException('Organisation not found');
+    if (dto.role === 'org_owner') {
+      throw new BadRequestException('Cannot invite as owner');
+    }
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: dto.email.toLowerCase() },
+    });
+    if (existingUser) {
+      const alreadyMember = await this.prisma.organisationMember.findUnique({
+        where: {
+          organisationId_userId: {
+            organisationId: organisation.id,
+            userId: existingUser.id,
+          },
+        },
+      });
+      if (alreadyMember) {
+        throw new BadRequestException('User is already a team member');
+      }
+    }
+    const existingInvite = await this.prisma.organisationInvitation.findUnique({
+      where: {
+        organisationId_email: { organisationId: organisation.id, email: dto.email.toLowerCase() },
+      },
+    });
+    if (existingInvite) {
+      throw new BadRequestException('An invitation has already been sent to this email');
+    }
+    const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await this.prisma.organisationInvitation.create({
+      data: {
+        organisationId: organisation.id,
+        email: dto.email.toLowerCase(),
+        role: dto.role as any,
+        token,
+        expiresAt,
+      },
+    });
+    try {
+      const inviteLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/register?invite=${token}`;
+      await this.mailService.send(
+        {
+          to: dto.email,
+          subject: `Invitation to join ${organisation.companyName} on Taldium`,
+        },
+        `<div style="font-family: Arial, sans-serif; max-width: 600px;">
+          <h2>You've been invited to join ${organisation.companyName}</h2>
+          <p>Click the link below to accept the invitation and join the team.</p>
+          <p><a href="${inviteLink}" style="color: #2563eb;">Accept invitation</a></p>
+          <p>This link expires in 7 days.</p>
+        </div>`,
+      );
+    } catch (e) {
+      console.error('Failed to send invite email:', e);
+    }
+    return {
+      success: true,
+      message: 'Invitation sent successfully',
+      data: { email: dto.email, role: dto.role },
+    };
+  }
+
+  async updateMemberRole(userId: string, memberId: string, role: string) {
+    if (role === 'org_owner') {
+      throw new BadRequestException('Cannot set role to owner');
+    }
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+    });
+    if (!organisation) throw new NotFoundException('Organisation not found');
+    const member = await this.prisma.organisationMember.findFirst({
+      where: { id: memberId, organisationId: organisation.id },
+    });
+    if (!member) throw new NotFoundException('Member not found');
+    await this.prisma.organisationMember.update({
+      where: { id: memberId },
+      data: { role: role as any },
+    });
+    return {
+      success: true,
+      message: 'Role updated successfully',
+      data: { memberId, role },
+    };
+  }
+
+  async removeMember(userId: string, memberId: string) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+    });
+    if (!organisation) throw new NotFoundException('Organisation not found');
+    const member = await this.prisma.organisationMember.findFirst({
+      where: { id: memberId, organisationId: organisation.id },
+    });
+    if (!member) throw new NotFoundException('Member not found');
+    await this.prisma.organisationMember.delete({
+      where: { id: memberId },
+    });
+    return {
+      success: true,
+      message: 'Member removed successfully',
+      data: { memberId },
     };
   }
 
@@ -1699,36 +2267,52 @@ export class OrganisationService {
   }
 
   async createJob(userId: string, createJobDto: CreateJobDto) {
-    // console.log('createJobDto', createJobDto);
-    console.log('userId', userId);
-
-    // Get organisation for the authenticated user
     const organisation = await this.prisma.organisation.findUnique({
       where: { userId },
     });
-
-    console.log('organisation', organisation);
 
     if (!organisation) {
       throw new NotFoundException('Organisation not found');
     }
 
-    // Create job
+    const locationStr =
+      createJobDto.locations?.length > 0
+        ? createJobDto.locations.join(', ')
+        : createJobDto.location;
+
+    const payDto = createJobDto.pay as any;
+    const payPayload =
+      payDto.min != null && payDto.max != null
+        ? {
+            min: Number(payDto.min),
+            max: Number(payDto.max),
+            currency: payDto.currency || 'USD',
+            type: payDto.type || 'Gross',
+            period: payDto.period || 'Per annum',
+          }
+        : {
+            amount: payDto.amount != null ? Number(payDto.amount) : 0,
+            currency: payDto.currency || 'USD',
+            type: payDto.type || 'Gross',
+            period: payDto.period || 'Per annum',
+          };
+
     const job = await this.prisma.job.create({
       data: {
         organisationId: organisation.id,
         jobTitle: createJobDto.jobTitle,
-        location: createJobDto.location,
+        department: createJobDto.department ?? null,
+        location: locationStr,
         workMode: createJobDto.workMode as any,
         employmentType: createJobDto.employmentType as any,
         experienceYears: createJobDto.experienceYears,
-        jobLevel: createJobDto.jobLevel,
-        pay: createJobDto.pay as any,
+        jobLevel: createJobDto.jobLevel ?? null,
+        pay: payPayload,
         closingDate: createJobDto.closingDate
           ? new Date(createJobDto.closingDate)
           : null,
-        description: createJobDto.description,
-        requirements: createJobDto.requirements || [],
+        description: createJobDto.description ?? '',
+        requirements: createJobDto.requirements ?? [],
         applyCTA: createJobDto.applyCTA as any,
         status: 'draft',
         postedBy: userId,

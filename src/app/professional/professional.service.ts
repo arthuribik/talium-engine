@@ -235,7 +235,15 @@ export class ProfessionalService {
         currency: educationDto.currency,
         country: educationDto.country,
         verificationDocuments: educationDto.verificationDocuments as any,
+        verificationStatus: 'pending',
+        verifiedAt: null,
+        reviewedBy: null,
       },
+    });
+
+    await this.prisma.professional.update({
+      where: { id: education.professionalId },
+      data: { verifiedByAdminAt: null },
     });
 
     return {
@@ -283,7 +291,15 @@ export class ProfessionalService {
         currency: experienceDto.currency,
         salaryRange: experienceDto.salaryRange as any,
         verificationContact: experienceDto.verificationContact as any,
+        verificationStatus: 'pending',
+        verifiedAt: null,
+        reviewedBy: null,
       },
+    });
+
+    await this.prisma.professional.update({
+      where: { id: experience.professionalId },
+      data: { verifiedByAdminAt: null },
     });
 
     return {
@@ -503,6 +519,60 @@ export class ProfessionalService {
     };
   }
 
+  async getVerificationStatus(userId: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+      include: {
+        identityVerification: true,
+        education: { select: { id: true, verificationStatus: true } },
+        workExperience: { select: { id: true, verificationStatus: true } },
+      },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    const professionalWithExtras = professional as any;
+    const socialMedia = professionalWithExtras.socialMedia || {};
+    const hasSocial = [
+      socialMedia.linkedin,
+      socialMedia.twitter,
+      socialMedia.facebook,
+      socialMedia.instagram,
+      socialMedia.tiktok,
+      socialMedia.snapchat,
+    ].some(Boolean);
+
+    const personalCompleted =
+      !!(professional.country || professional.nationality || professional.dateOfBirth) ||
+      !!professional.identityVerification;
+    const personalVerified =
+      professional.identityStatus === 'verified' || !!professional.identityVerification?.verifiedAt;
+
+    const educationCompleted = professional.education.length > 0;
+    const educationVerified = professional.education.some(
+      (e) => e.verificationStatus === 'verified',
+    );
+
+    const workCompleted = professional.workExperience.length > 0;
+    const workVerified = professional.workExperience.some(
+      (e) => e.verificationStatus === 'verified',
+    );
+
+    return {
+      success: true,
+      data: {
+        personal: { completed: personalCompleted, verified: personalVerified },
+        education: { completed: educationCompleted, verified: educationVerified },
+        social: { completed: hasSocial, verified: hasSocial },
+        work: { completed: workCompleted, verified: workVerified },
+        certification: { completed: false, verified: false },
+        family: { completed: false, verified: false },
+      },
+    };
+  }
+
   async updateProfile(userId: string, updateDto: any) {
     const professional = await this.prisma.professional.findUnique({
       where: { userId },
@@ -538,11 +608,31 @@ export class ProfessionalService {
       };
     }
 
+    const identityRelated =
+      updateDto.country !== undefined ||
+      updateDto.nationality !== undefined ||
+      updateDto.dateOfBirth !== undefined;
+    if (
+      identityRelated &&
+      (professional.identityStatus === 'verified' || professional.identityVerified)
+    ) {
+      updateData.identityStatus = 'pending';
+      updateData.identityVerified = false;
+      updateData.verifiedByAdminAt = null;
+    }
+
     // Update professional
     const updated = await this.prisma.professional.update({
       where: { userId },
       data: updateData,
     });
+
+    if (identityRelated) {
+      await this.prisma.identityVerification.updateMany({
+        where: { professionalId: updated.id },
+        data: { status: 'pending', verifiedAt: null },
+      });
+    }
 
     // Type assertion for the updated result
     const updatedWithExtras = updated as any;

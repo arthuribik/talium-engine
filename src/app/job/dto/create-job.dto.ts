@@ -4,6 +4,7 @@ import {
   IsEnum,
   IsOptional,
   IsInt,
+  IsNumber,
   IsDateString,
   IsArray,
   IsObject,
@@ -13,19 +14,30 @@ import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
 class PayDto {
-  @ApiProperty()
+  @ApiProperty({ required: false })
   @IsInt()
-  amount: number;
+  @IsOptional()
+  amount?: number;
+
+  @ApiProperty({ required: false })
+  @IsNumber()
+  @IsOptional()
+  min?: number;
+
+  @ApiProperty({ required: false })
+  @IsNumber()
+  @IsOptional()
+  max?: number;
 
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
   currency: string;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
   @IsString()
-  @IsNotEmpty()
-  type: string;
+  @IsOptional()
+  type?: string;
 
   @ApiProperty()
   @IsString()
@@ -51,10 +63,21 @@ export class CreateJobDto {
   @IsNotEmpty()
   jobTitle: string;
 
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  department?: string;
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
   location: string;
+
+  @ApiProperty({ required: false, type: [String], description: 'Alternative to location: multiple locations joined as comma-separated' })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  locations?: string[];
 
   @ApiProperty({ enum: ['remote', 'hybrid', 'on_site', 'global_remote'] })
   @IsEnum(['remote', 'hybrid', 'on_site', 'global_remote'])
@@ -87,15 +110,16 @@ export class CreateJobDto {
   @IsOptional()
   closingDate?: string;
 
-  @ApiProperty()
+  @ApiProperty({ required: false, default: '' })
   @IsString()
-  @IsNotEmpty()
-  description: string;
+  @IsOptional()
+  description?: string;
 
-  @ApiProperty({ type: [String] })
+  @ApiProperty({ type: [String], required: false, default: [] })
   @IsArray()
   @IsString({ each: true })
-  requirements: string[];
+  @IsOptional()
+  requirements?: string[];
 
   @ApiProperty({ type: ApplyCTADto, required: false })
   @IsObject()
