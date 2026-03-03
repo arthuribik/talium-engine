@@ -3,7 +3,11 @@ import {
   ForbiddenException,
   BadRequestException,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import { PrismaService } from '../../utility/prisma/prisma.service';
 import { IdentityVerifyDto } from './dto/identity-verify.dto';
 import { AddEducationDto } from './dto/add-education.dto';
@@ -13,6 +17,42 @@ import { InitiatePaymentDto } from '../organisation/dto/initiate-payment.dto';
 @Injectable()
 export class ProfessionalService {
   constructor(private prisma: PrismaService) {}
+
+  async verifyPassword(userId: string, password: string): Promise<{ success: true }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { password: true },
+    });
+    if (!user?.password) {
+      throw new UnauthorizedException('Invalid password');
+    }
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) {
+      throw new UnauthorizedException('Invalid password');
+    }
+    return { success: true };
+  }
+
+  async uploadIdDocument(
+    userId: string,
+    file: { buffer: Buffer; originalname: string },
+  ): Promise<{ url: string }> {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+    const dir = path.join(process.cwd(), 'uploads', 'id-documents');
+    await fs.mkdir(dir, { recursive: true });
+    const ext = path.extname(file.originalname) || '';
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const filename = `${professional.id}-${Date.now()}-${safeName}`;
+    const filePath = path.join(dir, filename);
+    await fs.writeFile(filePath, file.buffer);
+    const url = `/uploads/id-documents/${filename}`;
+    return { url };
+  }
 
   async verifyIdentity(
     userId: string,
@@ -128,6 +168,7 @@ export class ProfessionalService {
       data: {
         professionalId: profId,
         levelOfEducation: educationDto.levelOfEducation as any,
+        programLevel: educationDto.programLevel,
         institutionName: educationDto.institutionName,
         degreeType: educationDto.degreeType,
         fieldOfStudy: educationDto.fieldOfStudy,
@@ -224,6 +265,7 @@ export class ProfessionalService {
       where: { id: educationId },
       data: {
         levelOfEducation: educationDto.levelOfEducation as any,
+        programLevel: educationDto.programLevel,
         institutionName: educationDto.institutionName,
         degreeType: educationDto.degreeType,
         fieldOfStudy: educationDto.fieldOfStudy,
@@ -544,7 +586,10 @@ export class ProfessionalService {
       socialMedia.snapchat,
     ].some(Boolean);
 
+    const hasRequiredIdFields =
+      !!(professional.idType && professional.idNumber && professional.idDocumentUrl);
     const personalCompleted =
+      hasRequiredIdFields ||
       !!(professional.country || professional.nationality || professional.dateOfBirth) ||
       !!professional.identityVerification;
     const personalVerified =
@@ -596,6 +641,27 @@ export class ProfessionalService {
     if (updateDto.dateOfBirth !== undefined) {
       updateData.dateOfBirth = new Date(updateDto.dateOfBirth);
     }
+    if (updateDto.idType !== undefined) {
+      updateData.idType = updateDto.idType;
+    }
+    if (updateDto.idNumber !== undefined) {
+      updateData.idNumber = updateDto.idNumber;
+    }
+    if (updateDto.idDocumentUrl !== undefined) {
+      updateData.idDocumentUrl = updateDto.idDocumentUrl;
+    }
+    if (updateDto.locationDocumentType !== undefined) {
+      updateData.locationDocumentType = updateDto.locationDocumentType;
+    }
+    if (updateDto.locationDocumentUrl !== undefined) {
+      updateData.locationDocumentUrl = updateDto.locationDocumentUrl;
+    }
+    if (updateDto.locations !== undefined) {
+      updateData.locations = updateDto.locations as any;
+    }
+    if (updateDto.profession !== undefined) {
+      updateData.profession = updateDto.profession;
+    }
     if (updateDto.description !== undefined) {
       updateData.description = updateDto.description;
     }
@@ -611,7 +677,10 @@ export class ProfessionalService {
     const identityRelated =
       updateDto.country !== undefined ||
       updateDto.nationality !== undefined ||
-      updateDto.dateOfBirth !== undefined;
+      updateDto.dateOfBirth !== undefined ||
+      updateDto.idType !== undefined ||
+      updateDto.idNumber !== undefined ||
+      updateDto.idDocumentUrl !== undefined;
     if (
       identityRelated &&
       (professional.identityStatus === 'verified' || professional.identityVerified)

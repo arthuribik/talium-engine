@@ -52,6 +52,11 @@ export class AddEducationDto {
   @IsNotEmpty()
   levelOfEducation: string;
 
+  @ApiProperty({ required: false, enum: ['undergraduate', 'postgraduate'], description: 'Program level' })
+  @IsString()
+  @IsOptional()
+  programLevel?: string;
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()

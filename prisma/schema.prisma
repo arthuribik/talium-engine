@@ -203,11 +203,18 @@ model OrganisationVerification {
 model Professional {
   id                  String             @id @default(cuid())
   userId              String             @unique
+  profession          String?
   country             String?
   nationality         String?
   dateOfBirth         DateTime?
   description         String?
   socialMedia         Json?
+  idType              IDType?
+  idNumber            String?
+  idDocumentUrl       String?
+  locationDocumentType String?
+  locationDocumentUrl  String?
+  locations            Json?
   identityVerified    Boolean            @default(false)
   identityStatus      VerificationStatus @default(not_activated)
   verifiedByAdminAt   DateTime?
@@ -248,6 +255,7 @@ model Education {
   id                    String             @id @default(cuid())
   professionalId        String
   levelOfEducation      EducationLevel
+  programLevel          String?
   institutionName       String
   degreeType            String?
   fieldOfStudy          String

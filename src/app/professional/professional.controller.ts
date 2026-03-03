@@ -9,7 +9,11 @@ import {
   Request,
   Delete,
   Query,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiOperation,
@@ -17,6 +21,8 @@ import {
   ApiBearerAuth,
   ApiParam,
   ApiQuery,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../utility/jwt/jwt-auth.guard';
 import { ProfessionalService } from './professional.service';
@@ -25,6 +31,7 @@ import { AddEducationDto } from './dto/add-education.dto';
 import { AddExperienceDto } from './dto/add-experience.dto';
 import { InitiatePaymentDto } from '../organisation/dto/initiate-payment.dto';
 import { UpdateProfessionalProfileDto } from './dto/update-profile.dto';
+import { VerifyPasswordDto } from './dto/verify-password.dto';
 
 @ApiTags('Professional')
 @Controller('professional')
@@ -32,6 +39,14 @@ import { UpdateProfessionalProfileDto } from './dto/update-profile.dto';
 @ApiBearerAuth()
 export class ProfessionalController {
   constructor(private readonly professionalService: ProfessionalService) {}
+
+  @Post('verify-password')
+  @ApiOperation({ summary: 'Verify current password before sensitive actions' })
+  @ApiResponse({ status: 200, description: 'Password verified successfully' })
+  @ApiResponse({ status: 401, description: 'Invalid password' })
+  async verifyPassword(@Request() req, @Body() body: VerifyPasswordDto) {
+    return this.professionalService.verifyPassword(req.user.userId, body.password);
+  }
 
   @Get('profile')
   @ApiOperation({
@@ -60,6 +75,25 @@ export class ProfessionalController {
     @Body() updateDto: UpdateProfessionalProfileDto,
   ) {
     return this.professionalService.updateProfile(req.user.userId, updateDto);
+  }
+
+  @Post('upload-id')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Upload ID document (image or PDF)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'ID document uploaded, returns URL' })
+  @ApiResponse({ status: 400, description: 'No file or invalid file' })
+  async uploadIdDocument(@Request() req, @UploadedFile() file: Express.Multer.File) {
+    if (!file?.buffer) {
+      throw new BadRequestException('No file uploaded');
+    }
+    return this.professionalService.uploadIdDocument(req.user.userId, file);
   }
 
   @Get('shared-data')
