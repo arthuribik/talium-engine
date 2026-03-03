@@ -317,7 +317,7 @@ export class AuthService {
     };
 
     const expiresIn =
-      this.configService.get<string>('JWT_EXPIRES_IN') || '3600';
+      this.configService.get<string>('JWT_EXPIRES_IN') || '30d';
     const expiresInFormatted = expiresIn.match(/^\d+$/)
       ? `${expiresIn}s`
       : expiresIn;
@@ -339,7 +339,7 @@ export class AuthService {
         this.configService.get<string>('REFRESH_TOKEN_SECRET') ||
         'refresh-secret',
       expiresIn:
-        this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN') || '7d',
+        this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN') || '60d',
     });
 
     return {
@@ -348,6 +348,75 @@ export class AuthService {
       refreshToken,
       requiresPasswordChange: user.firstLogin,
       requires2FA: user.twoFactorEnabled,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        userType: user.userType,
+        adminRole: user.adminProfile?.role,
+        organisationId: user.organisation?.id,
+        professionalId: user.professional?.id,
+      },
+    };
+  }
+
+  async refresh(refreshToken: string) {
+    if (!refreshToken?.trim()) {
+      throw new UnauthorizedException('Refresh token is required');
+    }
+    const refreshSecret =
+      this.configService.get<string>('REFRESH_TOKEN_SECRET') || 'refresh-secret';
+    const refreshExpiresIn =
+      this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN') || '60d';
+    const jwtSecret =
+      this.configService.get<string>('JWT_SECRET') || 'default-secret';
+    const expiresIn =
+      this.configService.get<string>('JWT_EXPIRES_IN') || '30d';
+    const expiresInFormatted = expiresIn.match(/^\d+$/) ? `${expiresIn}s` : expiresIn;
+
+    let payload: { sub: string; email: string; userType: string };
+    try {
+      payload = this.jwtService.verify(refreshToken, {
+        secret: refreshSecret,
+      });
+    } catch {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      include: {
+        adminProfile: true,
+        organisation: true,
+        professional: true,
+      },
+    });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+    if (user.status === 'SUSPENDED') {
+      throw new ForbiddenException('Account is suspended');
+    }
+
+    const newPayload = {
+      sub: user.id,
+      email: user.email,
+      userType: user.userType,
+    };
+    const accessToken = this.jwtService.sign(newPayload, {
+      secret: jwtSecret,
+      expiresIn: expiresInFormatted,
+    });
+    const newRefreshToken = this.jwtService.sign(newPayload, {
+      secret: refreshSecret,
+      expiresIn: refreshExpiresIn.match(/^\d+$/) ? `${refreshExpiresIn}s` : refreshExpiresIn,
+    });
+
+    return {
+      status: 'success',
+      token: accessToken,
+      refreshToken: newRefreshToken,
       user: {
         id: user.id,
         email: user.email,

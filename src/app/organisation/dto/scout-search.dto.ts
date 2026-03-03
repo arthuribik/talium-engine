@@ -7,11 +7,11 @@ export class ScoutSearchDto {
   @IsOptional()
   jobTitle?: string;
 
-  @ApiProperty({ required: false, enum: ['strict', 'partial'], description: 'Strict = exact job title match' })
+  @ApiProperty({ required: false, enum: ['strict', 'partial', 'fuzzy'], description: 'Strict = exact match, fuzzy = all search words must appear in job title' })
   @IsString()
-  @IsIn(['strict', 'partial'])
+  @IsIn(['strict', 'partial', 'fuzzy'])
   @IsOptional()
-  searchType?: 'strict' | 'partial';
+  searchType?: 'strict' | 'partial' | 'fuzzy';
 
   @ApiProperty({ required: false, description: 'Location to scout (e.g. "Global" or country name)' })
   @IsString()

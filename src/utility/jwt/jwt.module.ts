@@ -11,7 +11,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => {
-        const expiresIn = configService.get<string>('JWT_EXPIRES_IN') || '3600';
+        const expiresIn = configService.get<string>('JWT_EXPIRES_IN') || '30d';
         // Ensure expiresIn has a unit suffix if it's just a number
         const expiresInFormatted = expiresIn.match(/^\d+$/)
           ? `${expiresIn}s`

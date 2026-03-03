@@ -204,11 +204,15 @@ model Professional {
   id                  String             @id @default(cuid())
   userId              String             @unique
   profession          String?
+  gender              String?
+  middleName          String?
   country             String?
   nationality         String?
   dateOfBirth         DateTime?
   description         String?
   socialMedia         Json?
+  certifications      Json?
+  familyInfo          Json?
   idType              IDType?
   idNumber            String?
   idDocumentUrl       String?

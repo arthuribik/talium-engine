@@ -74,6 +74,16 @@ class SocialMediaDto {
   @IsUrl()
   @IsOptional()
   portfolio?: string;
+
+  @ApiProperty({ required: false })
+  @IsUrl()
+  @IsOptional()
+  tiktok?: string;
+
+  @ApiProperty({ required: false })
+  @IsUrl()
+  @IsOptional()
+  snapchat?: string;
 }
 
 export class UpdateProfessionalProfileDto {
@@ -81,6 +91,26 @@ export class UpdateProfessionalProfileDto {
   @IsString()
   @IsOptional()
   profession?: string;
+
+  @ApiProperty({ required: false, description: 'First name (updates User)' })
+  @IsString()
+  @IsOptional()
+  firstName?: string;
+
+  @ApiProperty({ required: false, description: 'Last name (updates User)' })
+  @IsString()
+  @IsOptional()
+  lastName?: string;
+
+  @ApiProperty({ required: false, description: 'Middle name(s)' })
+  @IsString()
+  @IsOptional()
+  middleName?: string;
+
+  @ApiProperty({ required: false, description: 'Gender' })
+  @IsString()
+  @IsOptional()
+  gender?: string;
 
   @ApiProperty({ required: false })
   @IsString()
@@ -140,4 +170,12 @@ export class UpdateProfessionalProfileDto {
   @ValidateNested()
   @Type(() => SocialMediaDto)
   socialMedia?: SocialMediaDto;
+
+  @ApiProperty({ required: false, description: 'Certifications list (JSON array)' })
+  @IsOptional()
+  certifications?: any;
+
+  @ApiProperty({ required: false, description: 'Family info (marital status, spouse, relations)' })
+  @IsOptional()
+  familyInfo?: any;
 }

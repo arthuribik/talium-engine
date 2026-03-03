@@ -214,7 +214,7 @@ export class OrganisationController {
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'search', required: false, type: String, description: 'Search by name or email' })
   @ApiQuery({ name: 'jobTitle', required: false, type: String, description: 'Filter by job title' })
-  @ApiQuery({ name: 'searchType', required: false, type: String, description: 'strict or partial for job title match' })
+  @ApiQuery({ name: 'searchType', required: false, type: String, description: 'strict, partial, or fuzzy for job title match' })
   @ApiQuery({ name: 'country', required: false, type: String, description: 'Filter by country' })
   @ApiQuery({ name: 'city', required: false, type: String, description: 'Filter by city' })
   @ApiQuery({ name: 'verified', required: false, type: Boolean, description: 'Filter by verified profile' })
@@ -229,7 +229,7 @@ export class OrganisationController {
     @Query('limit') limit?: string,
     @Query('search') search?: string,
     @Query('jobTitle') jobTitle?: string,
-    @Query('searchType') searchType?: 'strict' | 'partial',
+    @Query('searchType') searchType?: 'strict' | 'partial' | 'fuzzy',
     @Query('country') country?: string,
     @Query('city') city?: string,
     @Query('verified') verified?: string,

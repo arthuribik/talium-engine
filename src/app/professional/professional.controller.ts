@@ -89,11 +89,15 @@ export class ProfessionalController {
   })
   @ApiResponse({ status: 201, description: 'ID document uploaded, returns URL' })
   @ApiResponse({ status: 400, description: 'No file or invalid file' })
-  async uploadIdDocument(@Request() req, @UploadedFile() file: Express.Multer.File) {
+  async uploadIdDocument(@Request() req, @UploadedFile() file: { buffer?: Buffer; originalname?: string; mimetype?: string }) {
     if (!file?.buffer) {
       throw new BadRequestException('No file uploaded');
     }
-    return this.professionalService.uploadIdDocument(req.user.userId, file);
+    return this.professionalService.uploadIdDocument(req.user.userId, {
+      buffer: file.buffer,
+      originalname: file.originalname ?? 'document',
+      mimetype: file.mimetype,
+    });
   }
 
   @Get('shared-data')
@@ -130,6 +134,16 @@ export class ProfessionalController {
   })
   async getApplications(@Request() req) {
     return this.professionalService.getApplications(req.user.userId);
+  }
+
+  @Get('dashboard/stats')
+  @ApiOperation({ summary: 'Get dashboard analytics for professional' })
+  @ApiResponse({
+    status: 200,
+    description: 'Dashboard stats retrieved successfully',
+  })
+  async getDashboardStats(@Request() req) {
+    return this.professionalService.getDashboardStats(req.user.userId);
   }
 
   @Get('headhunt-offers')

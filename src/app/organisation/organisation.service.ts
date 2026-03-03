@@ -914,7 +914,7 @@ export class OrganisationService {
       limit: number;
       search?: string;
       jobTitle?: string;
-      searchType?: 'strict' | 'partial';
+      searchType?: 'strict' | 'partial' | 'fuzzy';
       country?: string;
       city?: string;
       verified?: boolean;
@@ -1082,12 +1082,16 @@ export class OrganisationService {
           return false;
         }
 
-        // Filter by job title (profession) - strict = exact match, partial = contains
+        // Filter by job title (profession) - strict = exact match, partial = contains, fuzzy = all words in title appear in role
         if (jobTitle && prof.profession) {
           const title = jobTitle.toLowerCase().trim();
           const role = prof.profession.toLowerCase();
           if (searchType === 'strict') {
             if (role !== title) return false;
+          } else if (searchType === 'fuzzy') {
+            const words = title.split(/\s+/).filter(Boolean);
+            const allWordsMatch = words.every((word) => role.includes(word));
+            if (!allWordsMatch) return false;
           } else {
             if (!role.includes(title)) return false;
           }
@@ -1174,7 +1178,7 @@ export class OrganisationService {
 
   async scoutSearch(userId: string, dto: {
     jobTitle?: string;
-    searchType?: 'strict' | 'partial';
+    searchType?: 'strict' | 'partial' | 'fuzzy';
     location?: string;
     domicile?: string;
     workMode?: string;
@@ -1947,13 +1951,13 @@ export class OrganisationService {
     // Create verification request
     const verificationRequest =
       await this.prisma.organisationVerification.create({
-        data: {
-          organisationId: orgId,
-          status: 'under_review',
-          documents: verificationDto.documents as any,
-          estimatedCompletionDate,
-        },
-      });
+      data: {
+        organisationId: orgId,
+        status: 'under_review',
+        documents: verificationDto.documents as any,
+        estimatedCompletionDate,
+      },
+    });
 
     // Update organisation verification status
     await this.prisma.organisation.update({

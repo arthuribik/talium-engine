@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './utility/prisma/prisma.module';
+import { S3Module } from './utility/s3/s3.module';
 import { AuthModule } from './app/auth/auth.module';
 import { AdminModule } from './admin/admin.module';
 import { OrganisationModule } from './app/organisation/organisation.module';
@@ -19,6 +20,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
     EventEmitterModule.forRoot(),
     GlobalModule,
     PrismaModule,
+    S3Module,
     JwtAuthModule,
     AuthModule,
     AdminModule,

@@ -6,9 +6,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
-import * as fs from 'fs/promises';
-import * as path from 'path';
 import { PrismaService } from '../../utility/prisma/prisma.service';
+import { S3Service } from '../../utility/s3/s3.service';
 import { IdentityVerifyDto } from './dto/identity-verify.dto';
 import { AddEducationDto } from './dto/add-education.dto';
 import { AddExperienceDto } from './dto/add-experience.dto';
@@ -16,7 +15,10 @@ import { InitiatePaymentDto } from '../organisation/dto/initiate-payment.dto';
 
 @Injectable()
 export class ProfessionalService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private s3: S3Service,
+  ) {}
 
   async verifyPassword(userId: string, password: string): Promise<{ success: true }> {
     const user = await this.prisma.user.findUnique({
@@ -35,7 +37,7 @@ export class ProfessionalService {
 
   async uploadIdDocument(
     userId: string,
-    file: { buffer: Buffer; originalname: string },
+    file: { buffer: Buffer; originalname: string; mimetype?: string },
   ): Promise<{ url: string }> {
     const professional = await this.prisma.professional.findUnique({
       where: { userId },
@@ -43,14 +45,15 @@ export class ProfessionalService {
     if (!professional) {
       throw new NotFoundException('Professional not found');
     }
-    const dir = path.join(process.cwd(), 'uploads', 'id-documents');
-    await fs.mkdir(dir, { recursive: true });
-    const ext = path.extname(file.originalname) || '';
-    const safeName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const safeName = (file.originalname || 'document').replace(
+      /[^a-zA-Z0-9.-]/g,
+      '_',
+    );
     const filename = `${professional.id}-${Date.now()}-${safeName}`;
-    const filePath = path.join(dir, filename);
-    await fs.writeFile(filePath, file.buffer);
-    const url = `/uploads/id-documents/${filename}`;
+    const url = await this.s3.upload(file.buffer, filename, {
+      prefix: 'id-documents',
+      contentType: file.mimetype,
+    });
     return { url };
   }
 
@@ -557,6 +560,10 @@ export class ProfessionalService {
         ...professional,
         description: professionalWithExtras.description || null,
         socialMedia: professionalWithExtras.socialMedia || {},
+        gender: professionalWithExtras.gender ?? null,
+        middleName: professionalWithExtras.middleName ?? null,
+        certifications: professionalWithExtras.certifications ?? null,
+        familyInfo: professionalWithExtras.familyInfo ?? null,
       },
     };
   }
@@ -662,8 +669,20 @@ export class ProfessionalService {
     if (updateDto.profession !== undefined) {
       updateData.profession = updateDto.profession;
     }
+    if (updateDto.gender !== undefined) {
+      updateData.gender = updateDto.gender;
+    }
+    if (updateDto.middleName !== undefined) {
+      updateData.middleName = updateDto.middleName;
+    }
     if (updateDto.description !== undefined) {
       updateData.description = updateDto.description;
+    }
+    if (updateDto.certifications !== undefined) {
+      updateData.certifications = updateDto.certifications as any;
+    }
+    if (updateDto.familyInfo !== undefined) {
+      updateData.familyInfo = updateDto.familyInfo as any;
     }
     if (updateDto.socialMedia !== undefined) {
       // Merge with existing social media
@@ -688,6 +707,17 @@ export class ProfessionalService {
       updateData.identityStatus = 'pending';
       updateData.identityVerified = false;
       updateData.verifiedByAdminAt = null;
+    }
+
+    // Update User name if provided
+    if (updateDto.firstName !== undefined || updateDto.lastName !== undefined) {
+      const userUpdate: { firstName?: string; lastName?: string } = {};
+      if (updateDto.firstName !== undefined) userUpdate.firstName = updateDto.firstName;
+      if (updateDto.lastName !== undefined) userUpdate.lastName = updateDto.lastName;
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: userUpdate,
+      });
     }
 
     // Update professional
@@ -983,6 +1013,75 @@ export class ProfessionalService {
           status: app.status,
           appliedAt: app.createdAt,
         })),
+      },
+    };
+  }
+
+  async getDashboardStats(userId: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    const applications = await this.prisma.jobApplication.findMany({
+      where: { professionalId: professional.id },
+      include: {
+        job: {
+          include: {
+            organisation: {
+              include: {
+                user: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const totalApplications = applications.length;
+    const pendingApplications = applications.filter(
+      (app) => app.status === 'pending' || app.status === 'under_review',
+    ).length;
+    const acceptedApplications = applications.filter(
+      (app) => app.status === 'accepted' || app.status === 'hired',
+    ).length;
+    const profileCompleteness = professional.profileCompleteness ?? 0;
+
+    const recentApplications = applications.slice(0, 5).map((app) => ({
+      id: app.id,
+      jobId: app.jobId,
+      jobTitle: app.job.jobTitle,
+      companyName:
+        app.job.organisation.companyName ||
+        `${app.job.organisation.user.firstName} ${app.job.organisation.user.lastName}`,
+      location: app.job.location,
+      status: app.status,
+      appliedAt: app.createdAt,
+      job: {
+        jobTitle: app.job.jobTitle,
+        organisation: {
+          companyName: app.job.organisation.companyName,
+        },
+      },
+    }));
+
+    return {
+      success: true,
+      data: {
+        totalApplications,
+        pendingApplications,
+        acceptedApplications,
+        profileCompleteness,
+        recentApplications,
       },
     };
   }
