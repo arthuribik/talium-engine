@@ -1823,6 +1823,150 @@ export class OrganisationService {
     };
   }
 
+  async getKeyEmployees(userId: string) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+      include: {
+        keyEmployees: {
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        },
+      },
+    });
+    if (!organisation) throw new NotFoundException('Organisation not found');
+    return {
+      success: true,
+      data: {
+        employees: organisation.keyEmployees.map((e) => ({
+          id: e.id,
+          firstName: e.firstName,
+          lastName: e.lastName,
+          name: `${e.firstName} ${e.lastName}`.trim(),
+          title: e.title,
+          bio: e.bio,
+          email: e.email,
+          linkedInUrl: e.linkedInUrl,
+          sortOrder: e.sortOrder,
+          createdAt: e.createdAt,
+        })),
+      },
+    };
+  }
+
+  async createKeyEmployee(
+    userId: string,
+    dto: {
+      firstName: string;
+      lastName: string;
+      title: string;
+      bio?: string;
+      email?: string;
+      linkedInUrl?: string;
+    },
+  ) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+      include: { keyEmployees: { orderBy: [{ sortOrder: 'desc' }], take: 1 } },
+    });
+    if (!organisation) throw new NotFoundException('Organisation not found');
+    const nextOrder = (organisation.keyEmployees[0]?.sortOrder ?? -1) + 1;
+    const employee = await this.prisma.organisationKeyEmployee.create({
+      data: {
+        organisationId: organisation.id,
+        firstName: dto.firstName.trim(),
+        lastName: dto.lastName.trim(),
+        title: dto.title.trim(),
+        bio: (dto.bio && dto.bio.trim()) ? dto.bio.trim() : null,
+        email: (dto.email && dto.email.trim()) ? dto.email.trim() : null,
+        linkedInUrl: (dto.linkedInUrl && dto.linkedInUrl.trim()) ? dto.linkedInUrl.trim() : null,
+        sortOrder: nextOrder,
+      },
+    });
+    return {
+      success: true,
+      message: 'Key employee added successfully',
+      data: {
+        id: employee.id,
+        firstName: employee.firstName,
+        lastName: employee.lastName,
+        name: `${employee.firstName} ${employee.lastName}`.trim(),
+        title: employee.title,
+        bio: employee.bio,
+        email: employee.email,
+        linkedInUrl: employee.linkedInUrl,
+        sortOrder: employee.sortOrder,
+        createdAt: employee.createdAt,
+      },
+    };
+  }
+
+  async updateKeyEmployee(
+    userId: string,
+    employeeId: string,
+    dto: {
+      firstName?: string;
+      lastName?: string;
+      title?: string;
+      bio?: string;
+      email?: string;
+      linkedInUrl?: string;
+    },
+  ) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+    });
+    if (!organisation) throw new NotFoundException('Organisation not found');
+    const employee = await this.prisma.organisationKeyEmployee.findFirst({
+      where: { id: employeeId, organisationId: organisation.id },
+    });
+    if (!employee) throw new NotFoundException('Key employee not found');
+    const updated = await this.prisma.organisationKeyEmployee.update({
+      where: { id: employeeId },
+      data: {
+        ...(dto.firstName != null && { firstName: dto.firstName.trim() }),
+        ...(dto.lastName != null && { lastName: dto.lastName.trim() }),
+        ...(dto.title != null && { title: dto.title.trim() }),
+        ...(dto.bio !== undefined && { bio: (dto.bio && dto.bio.trim()) ? dto.bio.trim() : null }),
+        ...(dto.email !== undefined && { email: (dto.email && dto.email.trim()) ? dto.email.trim() : null }),
+        ...(dto.linkedInUrl !== undefined && { linkedInUrl: (dto.linkedInUrl && dto.linkedInUrl.trim()) ? dto.linkedInUrl.trim() : null }),
+      },
+    });
+    return {
+      success: true,
+      message: 'Key employee updated successfully',
+      data: {
+        id: updated.id,
+        firstName: updated.firstName,
+        lastName: updated.lastName,
+        name: `${updated.firstName} ${updated.lastName}`.trim(),
+        title: updated.title,
+        bio: updated.bio,
+        email: updated.email,
+        linkedInUrl: updated.linkedInUrl,
+        sortOrder: updated.sortOrder,
+        createdAt: updated.createdAt,
+      },
+    };
+  }
+
+  async deleteKeyEmployee(userId: string, employeeId: string) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+    });
+    if (!organisation) throw new NotFoundException('Organisation not found');
+    const employee = await this.prisma.organisationKeyEmployee.findFirst({
+      where: { id: employeeId, organisationId: organisation.id },
+    });
+    if (!employee) throw new NotFoundException('Key employee not found');
+    await this.prisma.organisationKeyEmployee.delete({
+      where: { id: employeeId },
+    });
+    return {
+      success: true,
+      message: 'Key employee removed successfully',
+      data: { id: employeeId },
+    };
+  }
+
   async setupOrganisation(
     userId: string,
     orgId: string,
@@ -2318,6 +2462,15 @@ export class OrganisationService {
         description: createJobDto.description ?? '',
         requirements: createJobDto.requirements ?? [],
         applyCTA: createJobDto.applyCTA as any,
+        qualifyingQuestions: (createJobDto as any).qualifyingQuestions ?? null,
+        requiredApplicantData:
+          (createJobDto as any).requiredApplicantData?.length > 0
+            ? (createJobDto as any).requiredApplicantData
+            : ['full_name', 'email'],
+        distributionChannels:
+          (createJobDto as any).distributionChannels?.length > 0
+            ? (createJobDto as any).distributionChannels
+            : ['taldium_network'],
         status: 'draft',
         postedBy: userId,
       },

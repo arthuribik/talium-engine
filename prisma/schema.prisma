@@ -149,8 +149,27 @@ model Organisation {
   jobs                 Job[]
   members              OrganisationMember[]
   invitations          OrganisationInvitation[]
+  keyEmployees         OrganisationKeyEmployee[]
 
   @@map("organisations")
+}
+
+model OrganisationKeyEmployee {
+  id             String   @id @default(cuid())
+  organisationId String
+  firstName      String
+  lastName       String
+  title          String
+  bio            String?  @db.Text
+  email          String?
+  linkedInUrl    String?
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@map("organisation_key_employees")
 }
 
 model OrganisationMember {
@@ -312,25 +331,28 @@ model WorkExperience {
 }
 
 model Job {
-  id              String         @id @default(cuid())
-  organisationId  String
-  jobTitle        String
-  department      String?
-  location        String
-  workMode        WorkMode
-  employmentType  EmploymentType
-  experienceYears Int?
-  jobLevel        String?
-  pay             Json
-  closingDate     DateTime?
-  description     String         @default("")
-  requirements    String[]
-  applyCTA        Json?
-  status          JobStatus      @default(draft)
-  views           Int            @default(0)
-  postedBy        String?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id                    String         @id @default(cuid())
+  organisationId        String
+  jobTitle              String
+  department            String?
+  location              String
+  workMode              WorkMode
+  employmentType        EmploymentType
+  experienceYears       Int?
+  jobLevel              String?
+  pay                   Json
+  closingDate           DateTime?
+  description           String         @default("")
+  requirements          String[]
+  applyCTA              Json?
+  qualifyingQuestions   Json?          // [{ question: string }]
+  requiredApplicantData String[]        @default([]) // full_name, email, nationality, location, phone, government_id, academic_data, work_data, skill_set, social_media, financial_data, reference_data
+  distributionChannels  String[]       @default([]) // taldium_network, google_search, monday_com, lensa, linkedin, indeed, glassdoor
+  status                JobStatus      @default(draft)
+  views                 Int            @default(0)
+  postedBy              String?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
 
   organisation Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   applications JobApplication[]

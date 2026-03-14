@@ -29,6 +29,7 @@ import { ScoutSearchDto } from './dto/scout-search.dto';
 import { SendScoutRequestDto } from './dto/send-scout-request.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
+import { CreateKeyEmployeeDto, UpdateKeyEmployeeDto } from './dto/key-employee.dto';
 
 @ApiTags('Organisation')
 @Controller('organisation')
@@ -383,6 +384,45 @@ export class OrganisationController {
   @ApiResponse({ status: 404, description: 'Member not found' })
   async removeMember(@Request() req, @Param('memberId') memberId: string) {
     return this.organisationService.removeMember(req.user.userId, memberId);
+  }
+
+  @Get('employees')
+  @ApiOperation({ summary: 'Get key employees & associates' })
+  @ApiResponse({ status: 200, description: 'Key employees retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Organisation not found' })
+  async getKeyEmployees(@Request() req) {
+    return this.organisationService.getKeyEmployees(req.user.userId);
+  }
+
+  @Post('employees')
+  @ApiOperation({ summary: 'Add a key employee or associate' })
+  @ApiResponse({ status: 201, description: 'Key employee added successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid input' })
+  @ApiResponse({ status: 404, description: 'Organisation not found' })
+  async createKeyEmployee(@Request() req, @Body() body: CreateKeyEmployeeDto) {
+    return this.organisationService.createKeyEmployee(req.user.userId, body);
+  }
+
+  @Put('employees/:employeeId')
+  @ApiOperation({ summary: 'Update a key employee or associate' })
+  @ApiParam({ name: 'employeeId', description: 'Key employee ID' })
+  @ApiResponse({ status: 200, description: 'Key employee updated successfully' })
+  @ApiResponse({ status: 404, description: 'Key employee not found' })
+  async updateKeyEmployee(
+    @Request() req,
+    @Param('employeeId') employeeId: string,
+    @Body() body: UpdateKeyEmployeeDto,
+  ) {
+    return this.organisationService.updateKeyEmployee(req.user.userId, employeeId, body);
+  }
+
+  @Delete('employees/:employeeId')
+  @ApiOperation({ summary: 'Remove a key employee or associate' })
+  @ApiParam({ name: 'employeeId', description: 'Key employee ID' })
+  @ApiResponse({ status: 200, description: 'Key employee removed successfully' })
+  @ApiResponse({ status: 404, description: 'Key employee not found' })
+  async deleteKeyEmployee(@Request() req, @Param('employeeId') employeeId: string) {
+    return this.organisationService.deleteKeyEmployee(req.user.userId, employeeId);
   }
 
   @Get('billing')

@@ -1301,18 +1301,28 @@ export class AdminService {
       data: {
         organisationId: orgId,
         jobTitle: createJobDto.jobTitle,
+        department: createJobDto.department ?? null,
         location: createJobDto.location,
         workMode: createJobDto.workMode as any,
         employmentType: createJobDto.employmentType as any,
         experienceYears: createJobDto.experienceYears,
-        jobLevel: createJobDto.jobLevel,
+        jobLevel: createJobDto.jobLevel ?? null,
         pay: createJobDto.pay as any,
         closingDate: createJobDto.closingDate
           ? new Date(createJobDto.closingDate)
           : null,
-        description: createJobDto.description,
+        description: createJobDto.description ?? '',
         requirements: createJobDto.requirements || [],
         applyCTA: createJobDto.applyCTA as any,
+        qualifyingQuestions: createJobDto.qualifyingQuestions ?? null,
+        requiredApplicantData:
+          createJobDto.requiredApplicantData?.length > 0
+            ? createJobDto.requiredApplicantData
+            : ['full_name', 'email'],
+        distributionChannels:
+          createJobDto.distributionChannels?.length > 0
+            ? createJobDto.distributionChannels
+            : ['taldium_network'],
         status: 'draft',
         postedBy: userId,
       },

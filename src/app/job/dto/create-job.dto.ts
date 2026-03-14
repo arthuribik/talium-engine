@@ -127,4 +127,29 @@ export class CreateJobDto {
   @ValidateNested()
   @Type(() => ApplyCTADto)
   applyCTA?: ApplyCTADto;
+
+  @ApiProperty({ type: [Object], required: false, description: 'Screening questions: [{ question: string }]' })
+  @IsArray()
+  @IsOptional()
+  qualifyingQuestions?: Array<{ question: string }>;
+
+  @ApiProperty({
+    type: [String],
+    required: false,
+    description: 'Required applicant data keys: full_name, email, nationality, location, phone, government_id, academic_data, work_data, skill_set, social_media, financial_data, reference_data',
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  requiredApplicantData?: string[];
+
+  @ApiProperty({
+    type: [String],
+    required: false,
+    description: 'Distribution channels: taldium_network, google_search, monday_com, lensa, linkedin, indeed, glassdoor',
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  distributionChannels?: string[];
 }
