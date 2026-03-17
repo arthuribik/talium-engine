@@ -128,10 +128,14 @@ export class CreateJobDto {
   @Type(() => ApplyCTADto)
   applyCTA?: ApplyCTADto;
 
-  @ApiProperty({ type: [Object], required: false, description: 'Screening questions: [{ question: string }]' })
+  @ApiProperty({
+    type: [Object],
+    required: false,
+    description: 'Screening questions: [{ question: string; type?: string; optional?: boolean }]',
+  })
   @IsArray()
   @IsOptional()
-  qualifyingQuestions?: Array<{ question: string }>;
+  qualifyingQuestions?: Array<{ question: string; type?: string; optional?: boolean }>;
 
   @ApiProperty({
     type: [String],
