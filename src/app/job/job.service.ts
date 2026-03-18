@@ -141,20 +141,26 @@ export class JobService {
       throw new NotFoundException('Job not found');
     }
 
-    // Check if user has applied (if userId is provided)
+    // Check if user has applied and if job is saved (if userId is provided)
     let hasApplied = false;
+    let isSaved = false;
     let professionalId: string | null = null;
     if (userId) {
       const professional = await this.prisma.professional.findFirst({
         where: { userId },
       });
-      
       if (professional) {
         professionalId = professional.id;
         const application = job.applications.find(
           (app) => app.professionalId === professional.id
         );
         hasApplied = !!application;
+        const saved = await this.prisma.savedJob.findUnique({
+          where: {
+            professionalId_jobId: { professionalId: professional.id, jobId },
+          },
+        });
+        isSaved = !!saved;
       }
     }
 
@@ -201,6 +207,7 @@ export class JobService {
         ...job,
         applicants: job.applications.length,
         hasApplied,
+        isSaved: userId ? isSaved : false,
       },
     };
   }

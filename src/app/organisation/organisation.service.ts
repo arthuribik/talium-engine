@@ -571,6 +571,60 @@ export class OrganisationService {
     };
   }
 
+  async getJobById(userId: string, jobId: string) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+    const job = await this.prisma.job.findFirst({
+      where: {
+        id: jobId,
+        organisationId: organisation.id,
+      },
+      include: {
+        organisation: {
+          select: { id: true, companyName: true },
+        },
+        applications: { select: { id: true, status: true } },
+      },
+    });
+    if (!job) {
+      throw new NotFoundException('Job not found');
+    }
+    const payRaw = typeof job.pay === 'string' ? (() => { try { return JSON.parse(job.pay as string); } catch { return {}; } })() : (job.pay as object) || {};
+    return {
+      success: true,
+      data: {
+        id: job.id,
+        jobTitle: job.jobTitle,
+        department: job.department ?? null,
+        jobLevel: job.jobLevel ?? null,
+        employmentType: job.employmentType,
+        workMode: job.workMode,
+        workModeLabel: this.workModeLabel(job.workMode),
+        employmentTypeLabel: this.employmentTypeLabel(job.employmentType),
+        experienceYears: job.experienceYears ?? null,
+        location: job.location,
+        pay: payRaw,
+        salaryRange: this.formatSalaryRange(payRaw),
+        startDate: job.startDate ?? null,
+        endDate: job.endDate ?? null,
+        closingDate: job.closingDate ?? null,
+        description: job.description ?? '',
+        requirements: job.requirements ?? [],
+        qualifyingQuestions: (job.qualifyingQuestions as any) ?? [],
+        requiredApplicantData: job.requiredApplicantData ?? [],
+        distributionChannels: job.distributionChannels ?? [],
+        status: job.status,
+        createdAt: job.createdAt,
+        applicantsCount: job.applications.length,
+        organisation: job.organisation,
+      },
+    };
+  }
+
   async getApplications(
     userId: string,
     page: number = 1,
@@ -747,6 +801,7 @@ export class OrganisationService {
     userId: string,
     applicationId: string,
     status: string,
+    reason?: string,
   ) {
     const validStatuses = [
       'pending',
@@ -785,10 +840,16 @@ export class OrganisationService {
       throw new NotFoundException('Application not found');
     }
 
+    const updateData: { status: string; applicationData?: any } = { status };
+    if (status === 'rejected' && reason != null && String(reason).trim()) {
+      const existing = (application.applicationData as any) || {};
+      updateData.applicationData = { ...existing, rejectionReason: String(reason).trim() };
+    }
+
     // Update application status
     const updated = await this.prisma.jobApplication.update({
       where: { id: applicationId },
-      data: { status },
+      data: updateData,
     });
 
     return {
@@ -2456,6 +2517,8 @@ export class OrganisationService {
         experienceYears: createJobDto.experienceYears,
         jobLevel: createJobDto.jobLevel ?? null,
         pay: payPayload,
+        startDate: createJobDto.startDate ? new Date(createJobDto.startDate) : null,
+        endDate: createJobDto.endDate ? new Date(createJobDto.endDate) : null,
         closingDate: createJobDto.closingDate
           ? new Date(createJobDto.closingDate)
           : null,
@@ -2479,6 +2542,91 @@ export class OrganisationService {
     return {
       success: true,
       message: 'Job created successfully',
+      data: job,
+    };
+  }
+
+  async updateJob(userId: string, jobId: string, updateDto: CreateJobDto) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+    const existing = await this.prisma.job.findFirst({
+      where: { id: jobId, organisationId: organisation.id },
+    });
+    if (!existing) {
+      throw new NotFoundException('Job not found');
+    }
+
+    const locationStr =
+      (updateDto as any).locations?.length > 0
+        ? (updateDto as any).locations.join(', ')
+        : updateDto.location ?? existing.location;
+
+    const payDto = updateDto.pay as any;
+    const payPayload =
+      payDto?.min != null && payDto?.max != null
+        ? {
+            min: Number(payDto.min),
+            max: Number(payDto.max),
+            currency: payDto.currency || 'USD',
+            type: payDto.type || 'Gross',
+            period: payDto.period || 'Per annum',
+          }
+        : {
+            amount: payDto?.amount != null ? Number(payDto.amount) : 0,
+            currency: payDto?.currency || 'USD',
+            type: payDto?.type || 'Gross',
+            period: payDto?.period || 'Per annum',
+          };
+
+    const rawQualifying = (updateDto as any).qualifyingQuestions;
+    const qualifyingQuestions =
+      Array.isArray(rawQualifying) && rawQualifying.length > 0
+        ? JSON.parse(JSON.stringify(rawQualifying))
+        : null;
+    const rawApplyCTA = updateDto.applyCTA;
+    const applyCTA =
+      rawApplyCTA && typeof rawApplyCTA === 'object'
+        ? JSON.parse(JSON.stringify(rawApplyCTA))
+        : undefined;
+    const requiredApplicantData =
+      (updateDto as any).requiredApplicantData?.length > 0
+        ? [...((updateDto as any).requiredApplicantData as string[])]
+        : ['full_name', 'email'];
+    const distributionChannels =
+      (updateDto as any).distributionChannels?.length > 0
+        ? [...((updateDto as any).distributionChannels as string[])]
+        : ['taldium_network'];
+
+    const job = await this.prisma.job.update({
+      where: { id: jobId },
+      data: {
+        jobTitle: updateDto.jobTitle,
+        department: updateDto.department ?? null,
+        location: locationStr,
+        workMode: updateDto.workMode as any,
+        employmentType: updateDto.employmentType as any,
+        experienceYears: updateDto.experienceYears ?? null,
+        jobLevel: updateDto.jobLevel ?? null,
+        pay: JSON.parse(JSON.stringify(payPayload)),
+        startDate: updateDto.startDate ? new Date(updateDto.startDate) : null,
+        endDate: updateDto.endDate ? new Date(updateDto.endDate) : null,
+        closingDate: updateDto.closingDate ? new Date(updateDto.closingDate) : null,
+        description: updateDto.description ?? '',
+        requirements: Array.isArray(updateDto.requirements) ? updateDto.requirements : [],
+        applyCTA,
+        qualifyingQuestions,
+        requiredApplicantData,
+        distributionChannels,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Job updated successfully',
       data: job,
     };
   }

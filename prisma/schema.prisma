@@ -251,6 +251,7 @@ model Professional {
   education            Education[]
   workExperience       WorkExperience[]
   jobApplications      JobApplication[]
+  savedJobs            SavedJob[]
 
   @@map("professionals")
 }
@@ -341,6 +342,8 @@ model Job {
   experienceYears       Int?
   jobLevel              String?
   pay                   Json
+  startDate             DateTime?
+  endDate               DateTime?
   closingDate           DateTime?
   description           String         @default("")
   requirements          String[]
@@ -356,6 +359,7 @@ model Job {
 
   organisation Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   applications JobApplication[]
+  savedBy      SavedJob[]
 
   @@map("jobs")
 }
@@ -374,4 +378,17 @@ model JobApplication {
 
   @@unique([jobId, professionalId])
   @@map("job_applications")
+}
+
+model SavedJob {
+  id             String   @id @default(cuid())
+  professionalId String
+  jobId          String
+  createdAt      DateTime @default(now())
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([professionalId, jobId])
+  @@map("saved_jobs")
 }

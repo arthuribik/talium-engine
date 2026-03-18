@@ -19,6 +19,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../utility/jwt/jwt-auth.guard';
+import { JwtOptionalAuthGuard } from '../../utility/jwt/jwt-optional-auth.guard';
 import { JobService } from './job.service';
 import { CreateJobDto } from './dto/create-job.dto';
 import { ApplyJobDto } from './dto/apply-job.dto';
@@ -67,17 +68,22 @@ export class JobController {
   }
 
   @Get(':jobId')
-  @ApiOperation({ summary: 'Get a specific job' })
+  @UseGuards(JwtOptionalAuthGuard)
+  @ApiOperation({
+    summary: 'Get a specific job',
+    description:
+      'Accepts requests with or without Authorization. When Bearer token is present and valid, response includes hasApplied for that user. When no token or invalid token, returns job with hasApplied: false.',
+  })
   @ApiParam({ name: 'jobId', description: 'Job ID' })
   @ApiQuery({ name: 'isUniqueView', required: false, type: Boolean, description: 'Whether this is a unique view (tracked by frontend)' })
-  @ApiResponse({ status: 200, description: 'Job retrieved successfully' })
+  @ApiResponse({ status: 200, description: 'Job retrieved successfully. Always includes hasApplied (true/false when authenticated, false when not).' })
   @ApiResponse({ status: 404, description: 'Job not found' })
   async getJob(
     @Param('jobId') jobId: string,
-    @Request() req?: any,
+    @Request() req: { user?: { userId: string } },
     @Query('isUniqueView') isUniqueView?: string,
   ) {
-    const userId = req?.user?.userId || undefined;
+    const userId = req?.user?.userId ?? undefined;
     const isUnique = isUniqueView === 'true' || isUniqueView === undefined;
     return this.jobService.getJob(jobId, userId, isUnique);
   }

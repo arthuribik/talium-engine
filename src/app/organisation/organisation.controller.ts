@@ -102,6 +102,15 @@ export class OrganisationController {
     );
   }
 
+  @Get('jobs/:jobId')
+  @ApiOperation({ summary: 'Get a single job by ID (full details)' })
+  @ApiParam({ name: 'jobId', description: 'Job ID' })
+  @ApiResponse({ status: 200, description: 'Job retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Job not found' })
+  async getJobById(@Request() req, @Param('jobId') jobId: string) {
+    return this.organisationService.getJobById(req.user.userId, jobId);
+  }
+
   @Post('jobs')
   @ApiOperation({ summary: 'Create a job (Organisation)' })
   @ApiResponse({ status: 201, description: 'Job created successfully' })
@@ -109,6 +118,19 @@ export class OrganisationController {
   @ApiResponse({ status: 404, description: 'Organisation not found' })
   async createJob(@Request() req, @Body() createJobDto: CreateJobDto) {
     return this.organisationService.createJob(req.user.userId, createJobDto);
+  }
+
+  @Put('jobs/:jobId')
+  @ApiOperation({ summary: 'Update a job (Organisation)' })
+  @ApiParam({ name: 'jobId', description: 'Job ID' })
+  @ApiResponse({ status: 200, description: 'Job updated successfully' })
+  @ApiResponse({ status: 404, description: 'Job not found' })
+  async updateJob(
+    @Request() req,
+    @Param('jobId') jobId: string,
+    @Body() updateDto: CreateJobDto,
+  ) {
+    return this.organisationService.updateJob(req.user.userId, jobId, updateDto);
   }
 
   @Get('applications')
@@ -161,12 +183,13 @@ export class OrganisationController {
   async updateApplicationStatus(
     @Request() req,
     @Param('applicationId') applicationId: string,
-    @Body() body: { status: string },
+    @Body() body: { status: string; reason?: string },
   ) {
     return this.organisationService.updateApplicationStatus(
       req.user.userId,
       applicationId,
       body.status,
+      body.reason,
     );
   }
 

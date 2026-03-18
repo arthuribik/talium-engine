@@ -57,6 +57,28 @@ export class ProfessionalService {
     return { url };
   }
 
+  async uploadCv(
+    userId: string,
+    file: { buffer: Buffer; originalname: string; mimetype?: string },
+  ): Promise<{ url: string }> {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+    const safeName = (file.originalname || 'cv').replace(
+      /[^a-zA-Z0-9.-]/g,
+      '_',
+    );
+    const filename = `${professional.id}-${Date.now()}-${safeName}`;
+    const url = await this.s3.upload(file.buffer, filename, {
+      prefix: 'cvs',
+      contentType: file.mimetype,
+    });
+    return { url };
+  }
+
   async verifyIdentity(
     userId: string,
     profId: string,
@@ -1014,6 +1036,57 @@ export class ProfessionalService {
           appliedAt: app.createdAt,
         })),
       },
+    };
+  }
+
+  async saveJob(userId: string, jobId: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+    const job = await this.prisma.job.findUnique({ where: { id: jobId } });
+    if (!job) {
+      throw new NotFoundException('Job not found');
+    }
+    await this.prisma.savedJob.upsert({
+      where: {
+        professionalId_jobId: { professionalId: professional.id, jobId },
+      },
+      create: { professionalId: professional.id, jobId },
+      update: {},
+    });
+    return { success: true, message: 'Job saved', data: { jobId } };
+  }
+
+  async unsaveJob(userId: string, jobId: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+    await this.prisma.savedJob.deleteMany({
+      where: { professionalId: professional.id, jobId },
+    });
+    return { success: true, message: 'Job removed from saved', data: { jobId } };
+  }
+
+  async getSavedJobIds(userId: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+    const saved = await this.prisma.savedJob.findMany({
+      where: { professionalId: professional.id },
+      select: { jobId: true },
+    });
+    return {
+      success: true,
+      data: { jobIds: saved.map((s) => s.jobId) },
     };
   }
 

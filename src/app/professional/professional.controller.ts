@@ -100,6 +100,29 @@ export class ProfessionalController {
     });
   }
 
+  @Post('upload-cv')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Upload CV/resume (PDF or document)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'CV uploaded, returns URL' })
+  @ApiResponse({ status: 400, description: 'No file or invalid file' })
+  async uploadCv(@Request() req, @UploadedFile() file: { buffer?: Buffer; originalname?: string; mimetype?: string }) {
+    if (!file?.buffer) {
+      throw new BadRequestException('No file uploaded');
+    }
+    return this.professionalService.uploadCv(req.user.userId, {
+      buffer: file.buffer,
+      originalname: file.originalname ?? 'cv',
+      mimetype: file.mimetype,
+    });
+  }
+
   @Get('shared-data')
   @ApiOperation({ summary: 'Get shared data history' })
   @ApiResponse({
@@ -134,6 +157,35 @@ export class ProfessionalController {
   })
   async getApplications(@Request() req) {
     return this.professionalService.getApplications(req.user.userId);
+  }
+
+  @Get('saved-jobs')
+  @ApiOperation({ summary: 'Get saved job IDs for the professional' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns { jobIds: string[] }',
+  })
+  async getSavedJobIds(@Request() req) {
+    return this.professionalService.getSavedJobIds(req.user.userId);
+  }
+
+  @Post('saved-jobs')
+  @ApiOperation({ summary: 'Save a job' })
+  @ApiResponse({ status: 200, description: 'Job saved' })
+  @ApiResponse({ status: 404, description: 'Job or professional not found' })
+  async saveJob(@Request() req, @Body() body: { jobId: string }) {
+    if (!body?.jobId) {
+      throw new BadRequestException('jobId is required');
+    }
+    return this.professionalService.saveJob(req.user.userId, body.jobId);
+  }
+
+  @Delete('saved-jobs/:jobId')
+  @ApiOperation({ summary: 'Remove a job from saved' })
+  @ApiParam({ name: 'jobId', description: 'Job ID' })
+  @ApiResponse({ status: 200, description: 'Job removed from saved' })
+  async unsaveJob(@Request() req, @Param('jobId') jobId: string) {
+    return this.professionalService.unsaveJob(req.user.userId, jobId);
   }
 
   @Get('dashboard/stats')

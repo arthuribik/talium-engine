@@ -108,6 +108,16 @@ export class CreateJobDto {
   @ApiProperty({ required: false })
   @IsDateString()
   @IsOptional()
+  startDate?: string;
+
+  @ApiProperty({ required: false })
+  @IsDateString()
+  @IsOptional()
+  endDate?: string;
+
+  @ApiProperty({ required: false })
+  @IsDateString()
+  @IsOptional()
   closingDate?: string;
 
   @ApiProperty({ required: false, default: '' })
@@ -131,11 +141,11 @@ export class CreateJobDto {
   @ApiProperty({
     type: [Object],
     required: false,
-    description: 'Screening questions: [{ question: string; type?: string; optional?: boolean }]',
+    description: 'Screening questions: [{ question: string; type?: string; optional?: boolean; options?: string[] }]',
   })
   @IsArray()
   @IsOptional()
-  qualifyingQuestions?: Array<{ question: string; type?: string; optional?: boolean }>;
+  qualifyingQuestions?: Array<{ question: string; type?: string; optional?: boolean; options?: string[] }>;
 
   @ApiProperty({
     type: [String],

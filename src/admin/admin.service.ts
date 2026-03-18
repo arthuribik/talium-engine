@@ -1308,6 +1308,8 @@ export class AdminService {
         experienceYears: createJobDto.experienceYears,
         jobLevel: createJobDto.jobLevel ?? null,
         pay: createJobDto.pay as any,
+        startDate: createJobDto.startDate ? new Date(createJobDto.startDate) : null,
+        endDate: createJobDto.endDate ? new Date(createJobDto.endDate) : null,
         closingDate: createJobDto.closingDate
           ? new Date(createJobDto.closingDate)
           : null,
