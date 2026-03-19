@@ -930,7 +930,7 @@ export class ProfessionalService {
     };
   }
 
-  async revokeAccess(userId: string, id: string) {
+  async getSharedDataById(userId: string, id: string) {
     const professional = await this.prisma.professional.findUnique({
       where: { userId },
     });
@@ -939,30 +939,89 @@ export class ProfessionalService {
       throw new NotFoundException('Professional not found');
     }
 
-    // Check if it's an application or hired record
+    const applicationId = id.startsWith('hired-') ? id.replace(/^hired-/, '') : id;
+    const application = await this.prisma.jobApplication.findFirst({
+      where: {
+        id: applicationId,
+        professionalId: professional.id,
+      },
+      include: {
+        job: {
+          include: {
+            organisation: {
+              include: {
+                user: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!application) {
+      throw new NotFoundException('Shared data entry not found');
+    }
+
+    const isHired = id.startsWith('hired-');
+    const job = application.job as any;
+    const requiredApplicantData = (job?.requiredApplicantData ?? []) as string[];
+    const applicationData = (application.applicationData as Record<string, unknown>) ?? {};
+
+    return {
+      success: true,
+      data: {
+        sharedData: {
+          id: isHired ? `hired-${application.id}` : application.id,
+          type: isHired ? 'hired' : 'application',
+          organisationName:
+            application.job.organisation.companyName ||
+            `${application.job.organisation.user.firstName} ${application.job.organisation.user.lastName}`,
+          status: isHired ? 'active' : application.status,
+          accessType: isHired ? 'employment' : 'application',
+          date: isHired ? application.updatedAt : application.createdAt,
+          retentionPeriod: isHired ? 'Indefinite' : '30 days',
+          jobTitle: application.job.jobTitle,
+          requiredApplicantData,
+          applicationData,
+        },
+      },
+    };
+  }
+
+  async revokeAccess(userId: string, id: string, reason?: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
     const application = await this.prisma.jobApplication.findFirst({
       where: { id, professionalId: professional.id },
     });
 
-    if (application) {
-      // For applications, we can't really "revoke" but we can mark it as withdrawn
-      await this.prisma.jobApplication.update({
-        where: { id },
-        data: { status: 'withdrawn' },
-      });
-    } else {
-      // For hired records, update the application status
-      await this.prisma.jobApplication.updateMany({
-        where: {
-          id,
-          professionalId: professional.id,
-          status: {
-            in: ['hired', 'accepted'],
-          },
-        },
-        data: { status: 'rejected' },
-      });
+    if (!application) {
+      throw new NotFoundException('Application not found');
     }
+
+    const existingData = (application.applicationData as Record<string, unknown>) || {};
+    const applicationDataUpdate = {
+      ...existingData,
+      revocationReason: reason?.trim() || null,
+      revokedAt: new Date().toISOString(),
+    };
+    const newStatus = ['hired', 'accepted'].includes(application.status) ? 'rejected' : 'withdrawn';
+
+    await this.prisma.jobApplication.update({
+      where: { id },
+      data: { status: newStatus, applicationData: applicationDataUpdate },
+    });
 
     return {
       success: true,

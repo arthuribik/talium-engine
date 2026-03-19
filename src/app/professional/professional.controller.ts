@@ -32,6 +32,7 @@ import { AddExperienceDto } from './dto/add-experience.dto';
 import { InitiatePaymentDto } from '../organisation/dto/initiate-payment.dto';
 import { UpdateProfessionalProfileDto } from './dto/update-profile.dto';
 import { VerifyPasswordDto } from './dto/verify-password.dto';
+import { RevokeAccessDto } from './dto/revoke-access.dto';
 
 @ApiTags('Professional')
 @Controller('professional')
@@ -133,20 +134,28 @@ export class ProfessionalController {
     return this.professionalService.getSharedData(req.user.userId);
   }
 
-  @Post('shared-data/:id/revoke')
-  @ApiOperation({ summary: 'Revoke access for an organisation' })
-  @ApiParam({ name: 'id', description: 'Shared data ID' })
-  @ApiResponse({ status: 200, description: 'Access revoked successfully' })
-  async revokeAccess(@Request() req, @Param('id') id: string) {
-    return this.professionalService.revokeAccess(req.user.userId, id);
-  }
-
   @Get('shared-data/:id/report')
   @ApiOperation({ summary: 'Download shared data report' })
   @ApiParam({ name: 'id', description: 'Shared data ID' })
   @ApiResponse({ status: 200, description: 'Report retrieved successfully' })
   async getReport(@Request() req, @Param('id') id: string) {
     return this.professionalService.getReport(req.user.userId, id);
+  }
+
+  @Get('shared-data/:id')
+  @ApiOperation({ summary: 'Get shared data entry by ID (requirement applicant data)' })
+  @ApiParam({ name: 'id', description: 'Shared data ID (application id or hired-{applicationId})' })
+  @ApiResponse({ status: 200, description: 'Shared data entry with applicant data' })
+  async getSharedDataById(@Request() req, @Param('id') id: string) {
+    return this.professionalService.getSharedDataById(req.user.userId, id);
+  }
+
+  @Post('shared-data/:id/revoke')
+  @ApiOperation({ summary: 'Revoke access for an organisation' })
+  @ApiParam({ name: 'id', description: 'Shared data ID' })
+  @ApiResponse({ status: 200, description: 'Access revoked successfully' })
+  async revokeAccess(@Request() req, @Param('id') id: string, @Body() body: RevokeAccessDto) {
+    return this.professionalService.revokeAccess(req.user.userId, id, body?.reason);
   }
 
   @Get('applications')
