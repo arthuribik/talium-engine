@@ -5,20 +5,74 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../utility/prisma/prisma.service';
 import { S3Service } from '../../utility/s3/s3.service';
 import { IdentityVerifyDto } from './dto/identity-verify.dto';
 import { AddEducationDto } from './dto/add-education.dto';
 import { AddExperienceDto } from './dto/add-experience.dto';
+import { AddProjectDto } from './dto/add-project.dto';
 import { InitiatePaymentDto } from '../organisation/dto/initiate-payment.dto';
 
 @Injectable()
 export class ProfessionalService {
+  /** Logged-in phone verification OTPs: key `${userId}:${e164}` */
+  private phoneOtpStore = new Map<
+    string,
+    { code: string; expiresAt: Date; channel: 'sms' | 'email' }
+  >();
+
+  /** Logged-in account email verification: key `userId` */
+  private accountEmailOtpStore = new Map<
+    string,
+    { code: string; expiresAt: Date; email: string }
+  >();
+
   constructor(
     private prisma: PrismaService,
     private s3: S3Service,
+    private eventEmitter: EventEmitter2,
   ) {}
+
+  private normalizeProfessionalTimezone(value: unknown): string | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    if (typeof value !== 'string') {
+      throw new BadRequestException('Invalid timezone');
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    try {
+      Intl.DateTimeFormat(undefined, { timeZone: trimmed }).format(new Date());
+    } catch {
+      throw new BadRequestException('Invalid timezone identifier');
+    }
+    return trimmed;
+  }
+
+  private normalizeEducationProgramProgression(
+    items?: Array<{
+      title?: string;
+      startDate?: string;
+      endDate?: string;
+      currentlyActive?: boolean;
+    }>,
+  ) {
+    if (!items?.length) return undefined;
+    const cleaned = items
+      .map((p) => ({
+        title: (p.title || '').trim(),
+        startDate: (p.startDate || '').trim(),
+        endDate: (p.endDate || '').trim(),
+        currentlyActive: !!p.currentlyActive,
+      }))
+      .filter((p) => p.title);
+    return cleaned.length ? cleaned : undefined;
+  }
 
   async verifyPassword(userId: string, password: string): Promise<{ success: true }> {
     const user = await this.prisma.user.findUnique({
@@ -77,6 +131,74 @@ export class ProfessionalService {
       contentType: file.mimetype,
     });
     return { url };
+  }
+
+  async uploadProfileImage(
+    userId: string,
+    file: { buffer: Buffer; originalname: string; mimetype?: string },
+  ): Promise<{ url: string; profileImageUrl: string }> {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+    const mime = file.mimetype || '';
+    if (!mime.startsWith('image/')) {
+      throw new BadRequestException('File must be an image (e.g. JPEG, PNG, WebP)');
+    }
+    const maxBytes = 5 * 1024 * 1024;
+    if (file.buffer.length > maxBytes) {
+      throw new BadRequestException('Image must be at most 5 MB');
+    }
+    const safeName = (file.originalname || 'photo').replace(
+      /[^a-zA-Z0-9.-]/g,
+      '_',
+    );
+    const filename = `${professional.id}-${Date.now()}-${safeName}`;
+    const url = await this.s3.upload(file.buffer, filename, {
+      prefix: 'profile-images',
+      contentType: file.mimetype,
+    });
+    await this.prisma.professional.update({
+      where: { userId },
+      data: { profileImageUrl: url },
+    });
+    return { url, profileImageUrl: url };
+  }
+
+  async uploadLivenessSelfie(
+    userId: string,
+    file: { buffer: Buffer; originalname: string; mimetype?: string },
+  ): Promise<{ url: string; livenessSelfieUrl: string }> {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+    const mime = file.mimetype || '';
+    if (!mime.startsWith('image/')) {
+      throw new BadRequestException('File must be an image (e.g. JPEG, PNG, WebP)');
+    }
+    const maxBytes = 5 * 1024 * 1024;
+    if (file.buffer.length > maxBytes) {
+      throw new BadRequestException('Image must be at most 5 MB');
+    }
+    const safeName = (file.originalname || 'liveness').replace(
+      /[^a-zA-Z0-9.-]/g,
+      '_',
+    );
+    const filename = `${professional.id}-liveness-${Date.now()}-${safeName}`;
+    const url = await this.s3.upload(file.buffer, filename, {
+      prefix: 'liveness-selfies',
+      contentType: file.mimetype,
+    });
+    await this.prisma.professional.update({
+      where: { userId },
+      data: { livenessSelfieUrl: url },
+    });
+    return { url, livenessSelfieUrl: url };
   }
 
   async verifyIdentity(
@@ -194,7 +316,9 @@ export class ProfessionalService {
         professionalId: profId,
         levelOfEducation: educationDto.levelOfEducation as any,
         programLevel: educationDto.programLevel,
+        schoolType: educationDto.schoolType,
         institutionName: educationDto.institutionName,
+        institutionIndustry: educationDto.institutionIndustry,
         degreeType: educationDto.degreeType,
         fieldOfStudy: educationDto.fieldOfStudy,
         startDate: educationDto.startDate,
@@ -203,6 +327,20 @@ export class ProfessionalService {
         grade: educationDto.grade,
         costOfEducation: educationDto.costOfEducation,
         currency: educationDto.currency,
+        costFrequency: educationDto.costFrequency,
+        pendingLoanAmount: educationDto.pendingLoanAmount,
+        loanCurrency: educationDto.loanCurrency,
+        loanRepaymentFrequency: educationDto.loanRepaymentFrequency,
+        scholarshipsAndAid: educationDto.scholarshipsAndAid,
+        programDescription: educationDto.programDescription,
+        academicResponsibilities: educationDto.academicResponsibilities,
+        academicAchievements: educationDto.academicAchievements,
+        programProgression: this.normalizeEducationProgramProgression(
+          educationDto.programProgression,
+        ) as any,
+        activitiesSocieties: educationDto.activitiesSocieties,
+        associatedSkills: educationDto.associatedSkills,
+        supportingMediaUrl: educationDto.supportingMediaUrl,
         country: educationDto.country,
         verificationDocuments: educationDto.verificationDocuments as any,
         verificationStatus: 'pending',
@@ -291,7 +429,9 @@ export class ProfessionalService {
       data: {
         levelOfEducation: educationDto.levelOfEducation as any,
         programLevel: educationDto.programLevel,
+        schoolType: educationDto.schoolType,
         institutionName: educationDto.institutionName,
+        institutionIndustry: educationDto.institutionIndustry,
         degreeType: educationDto.degreeType,
         fieldOfStudy: educationDto.fieldOfStudy,
         startDate: educationDto.startDate,
@@ -300,6 +440,20 @@ export class ProfessionalService {
         grade: educationDto.grade,
         costOfEducation: educationDto.costOfEducation,
         currency: educationDto.currency,
+        costFrequency: educationDto.costFrequency,
+        pendingLoanAmount: educationDto.pendingLoanAmount,
+        loanCurrency: educationDto.loanCurrency,
+        loanRepaymentFrequency: educationDto.loanRepaymentFrequency,
+        scholarshipsAndAid: educationDto.scholarshipsAndAid,
+        programDescription: educationDto.programDescription,
+        academicResponsibilities: educationDto.academicResponsibilities,
+        academicAchievements: educationDto.academicAchievements,
+        programProgression: this.normalizeEducationProgramProgression(
+          educationDto.programProgression,
+        ) as any,
+        activitiesSocieties: educationDto.activitiesSocieties,
+        associatedSkills: educationDto.associatedSkills,
+        supportingMediaUrl: educationDto.supportingMediaUrl,
         country: educationDto.country,
         verificationDocuments: educationDto.verificationDocuments as any,
         verificationStatus: 'pending',
@@ -425,6 +579,128 @@ export class ProfessionalService {
     return {
       success: true,
       message: 'Work experience deleted successfully',
+    };
+  }
+
+  async addProject(userId: string, profId: string, dto: AddProjectDto) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { id: profId },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    if (professional.userId !== userId) {
+      throw new ForbiddenException(
+        'You do not have permission to update this profile',
+      );
+    }
+
+    const teamMembers =
+      dto.teamMembers
+        ?.map((m) => ({
+          name: (m.name || '').trim(),
+          role: (m.role || '').trim(),
+        }))
+        .filter((m) => m.name || m.role) ?? [];
+
+    const project = await this.prisma.professionalProject.create({
+      data: {
+        professionalId: profId,
+        title: dto.title.trim(),
+        description: dto.description?.trim(),
+        projectLink: dto.projectLink?.trim(),
+        mediaUrl: dto.mediaUrl?.trim(),
+        teamMembers: (teamMembers.length ? teamMembers : []) as any,
+        verificationStatus: 'pending',
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Project added successfully',
+      data: project,
+    };
+  }
+
+  async updateProject(
+    userId: string,
+    projectId: string,
+    dto: AddProjectDto,
+  ) {
+    const project = await this.prisma.professionalProject.findUnique({
+      where: { id: projectId },
+      include: { professional: true },
+    });
+
+    if (!project) {
+      throw new NotFoundException('Project record not found');
+    }
+
+    if (project.professional.userId !== userId) {
+      throw new ForbiddenException(
+        'You do not have permission to update this project record',
+      );
+    }
+
+    const teamMembers =
+      dto.teamMembers
+        ?.map((m) => ({
+          name: (m.name || '').trim(),
+          role: (m.role || '').trim(),
+        }))
+        .filter((m) => m.name || m.role) ?? [];
+
+    const updated = await this.prisma.professionalProject.update({
+      where: { id: projectId },
+      data: {
+        title: dto.title.trim(),
+        description: dto.description?.trim(),
+        projectLink: dto.projectLink?.trim(),
+        mediaUrl: dto.mediaUrl?.trim(),
+        teamMembers: (teamMembers.length ? teamMembers : []) as any,
+        verificationStatus: 'pending',
+        verifiedAt: null,
+        reviewedBy: null,
+      },
+    });
+
+    await this.prisma.professional.update({
+      where: { id: project.professionalId },
+      data: { verifiedByAdminAt: null },
+    });
+
+    return {
+      success: true,
+      message: 'Project updated successfully',
+      data: updated,
+    };
+  }
+
+  async deleteProject(userId: string, projectId: string) {
+    const project = await this.prisma.professionalProject.findUnique({
+      where: { id: projectId },
+      include: { professional: true },
+    });
+
+    if (!project) {
+      throw new NotFoundException('Project record not found');
+    }
+
+    if (project.professional.userId !== userId) {
+      throw new ForbiddenException(
+        'You do not have permission to delete this project record',
+      );
+    }
+
+    await this.prisma.professionalProject.delete({
+      where: { id: projectId },
+    });
+
+    return {
+      success: true,
+      message: 'Project deleted successfully',
     };
   }
 
@@ -556,6 +832,8 @@ export class ProfessionalService {
             lastName: true,
             status: true,
             phoneNumber: true,
+            emailVerified: true,
+            phoneVerified: true,
             createdAt: true,
           },
         },
@@ -564,6 +842,9 @@ export class ProfessionalService {
           orderBy: { createdAt: 'desc' },
         },
         workExperience: {
+          orderBy: { createdAt: 'desc' },
+        },
+        professionalProjects: {
           orderBy: { createdAt: 'desc' },
         },
       },
@@ -575,11 +856,14 @@ export class ProfessionalService {
 
     // Type assertion to include description and socialMedia fields
     const professionalWithExtras = professional as any;
+    const { professionalProjects, ...professionalRest } = professional as any;
 
     return {
       success: true,
       data: {
-        ...professional,
+        ...professionalRest,
+        professionalProjects,
+        projects: professionalProjects ?? [],
         description: professionalWithExtras.description || null,
         socialMedia: professionalWithExtras.socialMedia || {},
         gender: professionalWithExtras.gender ?? null,
@@ -597,6 +881,7 @@ export class ProfessionalService {
         identityVerification: true,
         education: { select: { id: true, verificationStatus: true } },
         workExperience: { select: { id: true, verificationStatus: true } },
+        professionalProjects: { select: { id: true, verificationStatus: true } },
       },
     });
 
@@ -634,6 +919,11 @@ export class ProfessionalService {
       (e) => e.verificationStatus === 'verified',
     );
 
+    const projectsCompleted = professional.professionalProjects.length > 0;
+    const projectsVerified = professional.professionalProjects.some(
+      (p) => p.verificationStatus === 'verified',
+    );
+
     return {
       success: true,
       data: {
@@ -641,6 +931,7 @@ export class ProfessionalService {
         education: { completed: educationCompleted, verified: educationVerified },
         social: { completed: hasSocial, verified: hasSocial },
         work: { completed: workCompleted, verified: workVerified },
+        projects: { completed: projectsCompleted, verified: projectsVerified },
         certification: { completed: false, verified: false },
         family: { completed: false, verified: false },
       },
@@ -685,6 +976,12 @@ export class ProfessionalService {
     if (updateDto.locationDocumentUrl !== undefined) {
       updateData.locationDocumentUrl = updateDto.locationDocumentUrl;
     }
+    if (updateDto.profileImageUrl !== undefined) {
+      updateData.profileImageUrl =
+        updateDto.profileImageUrl === null || updateDto.profileImageUrl === ''
+          ? null
+          : updateDto.profileImageUrl;
+    }
     if (updateDto.locations !== undefined) {
       updateData.locations = updateDto.locations as any;
     }
@@ -713,6 +1010,9 @@ export class ProfessionalService {
         ...currentSocialMedia,
         ...updateDto.socialMedia,
       };
+    }
+    if (updateDto.timezone !== undefined) {
+      updateData.timezone = this.normalizeProfessionalTimezone(updateDto.timezone);
     }
 
     const identityRelated =
@@ -1481,5 +1781,144 @@ export class ProfessionalService {
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // Link expires in 24 hours
       },
     };
+  }
+
+  async sendPhoneOtp(
+    userId: string,
+    dto: { phoneE164: string; channel: 'sms' | 'email' },
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { professional: true },
+    });
+    if (!user?.professional) {
+      throw new ForbiddenException('Professional profile required');
+    }
+    const normalized = dto.phoneE164.trim();
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 10);
+    const key = `${userId}:${normalized}`;
+    this.phoneOtpStore.set(key, { code, expiresAt, channel: dto.channel });
+
+    if (dto.channel === 'email') {
+      const html = `<p>Your Taldium phone verification code is: <strong>${code}</strong></p><p>Valid for 10 minutes.</p>`;
+      this.eventEmitter.emit('send_verification_email', {
+        to: user.email.toLowerCase(),
+        subject: 'Phone verification code',
+        html,
+      });
+    } else {
+      console.log(`[SMS] Phone OTP for ${normalized} (user ${userId}): ${code}`);
+    }
+
+    return {
+      success: true,
+      message:
+        dto.channel === 'email'
+          ? 'Verification code sent to your account email'
+          : 'Verification code issued (SMS delivery pending integration)',
+      ...(process.env.NODE_ENV === 'development' ? { code } : {}),
+    };
+  }
+
+  async verifyPhoneOtp(userId: string, dto: { phoneE164: string; code: string }) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { professional: true },
+    });
+    if (!user?.professional) {
+      throw new ForbiddenException('Professional profile required');
+    }
+    const normalized = dto.phoneE164.trim();
+    const key = `${userId}:${normalized}`;
+    const stored = this.phoneOtpStore.get(key);
+    if (!stored) {
+      throw new BadRequestException(
+        'No verification code for this number. Request a new code.',
+      );
+    }
+    if (stored.expiresAt < new Date()) {
+      this.phoneOtpStore.delete(key);
+      throw new BadRequestException('Code expired. Request a new code.');
+    }
+    if (stored.code !== dto.code) {
+      throw new BadRequestException('Invalid verification code');
+    }
+    this.phoneOtpStore.delete(key);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { phoneNumber: normalized, phoneVerified: true },
+    });
+    return { success: true, message: 'Phone number verified' };
+  }
+
+  async sendAccountEmailVerificationCode(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { professional: true },
+    });
+    if (!user?.professional) {
+      throw new ForbiddenException('Professional profile required');
+    }
+    if (user.emailVerified) {
+      throw new BadRequestException('Email is already verified');
+    }
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 10);
+    this.accountEmailOtpStore.set(userId, {
+      code,
+      expiresAt,
+      email: user.email.toLowerCase(),
+    });
+
+    const html = `<p>Your Taldium email verification code is: <strong>${code}</strong></p><p>Valid for 10 minutes.</p>`;
+    this.eventEmitter.emit('send_verification_email', {
+      to: user.email.toLowerCase(),
+      subject: 'Verify your email',
+      html,
+    });
+
+    return {
+      success: true,
+      message: 'Verification code sent to your email',
+      ...(process.env.NODE_ENV === 'development' ? { code } : {}),
+    };
+  }
+
+  async verifyAccountEmailCode(userId: string, code: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { professional: true },
+    });
+    if (!user?.professional) {
+      throw new ForbiddenException('Professional profile required');
+    }
+    if (user.emailVerified) {
+      throw new BadRequestException('Email is already verified');
+    }
+    const stored = this.accountEmailOtpStore.get(userId);
+    if (!stored) {
+      throw new BadRequestException(
+        'No verification code found. Request a new code.',
+      );
+    }
+    if (stored.expiresAt < new Date()) {
+      this.accountEmailOtpStore.delete(userId);
+      throw new BadRequestException('Code expired. Request a new code.');
+    }
+    if (stored.code !== code) {
+      throw new BadRequestException('Invalid verification code');
+    }
+    this.accountEmailOtpStore.delete(userId);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        emailVerified: true,
+        ...(user.status === 'UNVERIFIED' ? { status: 'VERIFIED' as const } : {}),
+      },
+    });
+    return { success: true, message: 'Email verified successfully' };
   }
 }

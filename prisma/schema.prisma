@@ -91,6 +91,7 @@ model User {
   firstName         String
   lastName          String
   phoneNumber       String?
+  phoneVerified     Boolean    @default(false)
   status            UserStatus @default(UNVERIFIED)
   userType          UserType
   emailVerified     Boolean    @default(false)
@@ -237,6 +238,11 @@ model Professional {
   idDocumentUrl       String?
   locationDocumentType String?
   locationDocumentUrl  String?
+  profileImageUrl      String?
+  /// Liveness verification selfie (S3); separate from public profile photo
+  livenessSelfieUrl    String?
+  /// IANA timezone, e.g. Africa/Lagos
+  timezone             String?
   locations            Json?
   identityVerified    Boolean            @default(false)
   identityStatus      VerificationStatus @default(not_activated)
@@ -250,6 +256,7 @@ model Professional {
   identityVerification IdentityVerification?
   education            Education[]
   workExperience       WorkExperience[]
+  professionalProjects ProfessionalProject[]
   jobApplications      JobApplication[]
   savedJobs            SavedJob[]
 
@@ -280,7 +287,9 @@ model Education {
   professionalId        String
   levelOfEducation      EducationLevel
   programLevel          String?
+  schoolType            String?
   institutionName       String
+  institutionIndustry   String?
   degreeType            String?
   fieldOfStudy          String
   startDate             String
@@ -289,6 +298,18 @@ model Education {
   grade                 String?
   costOfEducation       Float?
   currency              String?
+  costFrequency         String?
+  pendingLoanAmount     Float?
+  loanCurrency          String?
+  loanRepaymentFrequency String?
+  scholarshipsAndAid    String?            @db.Text
+  programDescription    String?            @db.Text
+  academicResponsibilities String?         @db.Text
+  academicAchievements  String?          @db.Text
+  programProgression    Json?
+  activitiesSocieties   String?            @db.Text
+  associatedSkills      String?
+  supportingMediaUrl    String?
   country               String
   verificationStatus    VerificationStatus @default(pending)
   verificationDocuments Json?
@@ -329,6 +350,25 @@ model WorkExperience {
   professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
 
   @@map("work_experiences")
+}
+
+model ProfessionalProject {
+  id                 String             @id @default(cuid())
+  professionalId     String
+  title              String
+  description        String?            @db.Text
+  projectLink        String?
+  mediaUrl           String?
+  teamMembers        Json?
+  verificationStatus VerificationStatus @default(pending)
+  verifiedAt         DateTime?
+  reviewedBy         String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+
+  @@map("professional_projects")
 }
 
 model Job {

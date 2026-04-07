@@ -12,6 +12,8 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -29,10 +31,14 @@ import { ProfessionalService } from './professional.service';
 import { IdentityVerifyDto } from './dto/identity-verify.dto';
 import { AddEducationDto } from './dto/add-education.dto';
 import { AddExperienceDto } from './dto/add-experience.dto';
+import { AddProjectDto } from './dto/add-project.dto';
 import { InitiatePaymentDto } from '../organisation/dto/initiate-payment.dto';
 import { UpdateProfessionalProfileDto } from './dto/update-profile.dto';
 import { VerifyPasswordDto } from './dto/verify-password.dto';
 import { RevokeAccessDto } from './dto/revoke-access.dto';
+import { SendPhoneOtpDto } from './dto/send-phone-otp.dto';
+import { VerifyPhoneOtpDto } from './dto/verify-phone-otp.dto';
+import { VerifyAccountEmailCodeDto } from './dto/verify-account-email-code.dto';
 
 @ApiTags('Professional')
 @Controller('professional')
@@ -47,6 +53,41 @@ export class ProfessionalController {
   @ApiResponse({ status: 401, description: 'Invalid password' })
   async verifyPassword(@Request() req, @Body() body: VerifyPasswordDto) {
     return this.professionalService.verifyPassword(req.user.userId, body.password);
+  }
+
+  @Post('phone/send-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send phone verification code (SMS or account email)' })
+  @ApiResponse({ status: 200, description: 'OTP sent' })
+  async sendPhoneOtp(@Request() req, @Body() dto: SendPhoneOtpDto) {
+    return this.professionalService.sendPhoneOtp(req.user.userId, dto);
+  }
+
+  @Post('phone/verify-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify phone OTP and save E.164 number on the user' })
+  @ApiResponse({ status: 200, description: 'Phone verified' })
+  async verifyPhoneOtp(@Request() req, @Body() dto: VerifyPhoneOtpDto) {
+    return this.professionalService.verifyPhoneOtp(req.user.userId, dto);
+  }
+
+  @Post('contact/send-email-code')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send 6-digit code to verify account email (unverified accounts)' })
+  @ApiResponse({ status: 200, description: 'Code sent' })
+  async sendAccountEmailVerification(@Request() req) {
+    return this.professionalService.sendAccountEmailVerificationCode(req.user.userId);
+  }
+
+  @Post('contact/verify-email-code')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify account email with 6-digit code' })
+  @ApiResponse({ status: 200, description: 'Email verified' })
+  async verifyAccountEmailCode(
+    @Request() req,
+    @Body() dto: VerifyAccountEmailCodeDto,
+  ) {
+    return this.professionalService.verifyAccountEmailCode(req.user.userId, dto.code);
   }
 
   @Get('profile')
@@ -120,6 +161,61 @@ export class ProfessionalController {
     return this.professionalService.uploadCv(req.user.userId, {
       buffer: file.buffer,
       originalname: file.originalname ?? 'cv',
+      mimetype: file.mimetype,
+    });
+  }
+
+  @Post('upload-profile-image')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Upload profile photo (stored in S3; updates professional profile)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Image uploaded; returns URL and updates profile' })
+  @ApiResponse({ status: 400, description: 'No file or invalid file' })
+  async uploadProfileImage(
+    @Request() req,
+    @UploadedFile() file: { buffer?: Buffer; originalname?: string; mimetype?: string },
+  ) {
+    if (!file?.buffer) {
+      throw new BadRequestException('No file uploaded');
+    }
+    return this.professionalService.uploadProfileImage(req.user.userId, {
+      buffer: file.buffer,
+      originalname: file.originalname ?? 'photo',
+      mimetype: file.mimetype,
+    });
+  }
+
+  @Post('upload-liveness-selfie')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({
+    summary:
+      'Upload liveness verification selfie (S3 only; does not change profile photo)',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Selfie stored for liveness verification' })
+  @ApiResponse({ status: 400, description: 'No file or invalid file' })
+  async uploadLivenessSelfie(
+    @Request() req,
+    @UploadedFile() file: { buffer?: Buffer; originalname?: string; mimetype?: string },
+  ) {
+    if (!file?.buffer) {
+      throw new BadRequestException('No file uploaded');
+    }
+    return this.professionalService.uploadLivenessSelfie(req.user.userId, {
+      buffer: file.buffer,
+      originalname: file.originalname ?? 'liveness.jpg',
       mimetype: file.mimetype,
     });
   }
@@ -430,6 +526,55 @@ export class ProfessionalController {
     return this.professionalService.deleteExperience(
       req.user.userId,
       experienceId,
+    );
+  }
+
+  @Post(':profId/project')
+  @ApiOperation({ summary: 'Add portfolio project' })
+  @ApiParam({ name: 'profId', description: 'Professional ID' })
+  @ApiResponse({ status: 201, description: 'Project added successfully' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  async addProject(
+    @Request() req,
+    @Param('profId') profId: string,
+    @Body() projectDto: AddProjectDto,
+  ) {
+    return this.professionalService.addProject(
+      req.user.userId,
+      profId,
+      projectDto,
+    );
+  }
+
+  @Put('project/:projectId')
+  @ApiOperation({ summary: 'Update project record' })
+  @ApiParam({ name: 'projectId', description: 'Project ID' })
+  @ApiResponse({ status: 200, description: 'Project updated successfully' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  async updateProject(
+    @Request() req,
+    @Param('projectId') projectId: string,
+    @Body() projectDto: AddProjectDto,
+  ) {
+    return this.professionalService.updateProject(
+      req.user.userId,
+      projectId,
+      projectDto,
+    );
+  }
+
+  @Delete('project/:projectId')
+  @ApiOperation({ summary: 'Delete project record' })
+  @ApiParam({ name: 'projectId', description: 'Project ID' })
+  @ApiResponse({ status: 200, description: 'Project deleted successfully' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  async deleteProject(
+    @Request() req,
+    @Param('projectId') projectId: string,
+  ) {
+    return this.professionalService.deleteProject(
+      req.user.userId,
+      projectId,
     );
   }
 

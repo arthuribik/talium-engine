@@ -8,6 +8,7 @@ import {
   IsDateString,
   IsEnum,
   IsArray,
+  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { IDType } from '@prisma/client';
@@ -157,6 +158,15 @@ export class UpdateProfessionalProfileDto {
   @IsOptional()
   locationDocumentUrl?: string;
 
+  @ApiProperty({
+    required: false,
+    description: 'Public profile photo URL; omit to leave unchanged, null or empty string to remove',
+  })
+  @IsOptional()
+  @ValidateIf((_, v) => v != null)
+  @IsString()
+  profileImageUrl?: string | null;
+
   @ApiProperty({ type: [LocationItemDto], required: false, description: 'List of locations' })
   @IsArray()
   @ValidateNested({ each: true })
@@ -178,4 +188,12 @@ export class UpdateProfessionalProfileDto {
   @ApiProperty({ required: false, description: 'Family info (marital status, spouse, relations)' })
   @IsOptional()
   familyInfo?: any;
+
+  @ApiProperty({
+    required: false,
+    description: 'IANA timezone (e.g. Africa/Lagos). Empty string clears.',
+  })
+  @IsString()
+  @IsOptional()
+  timezone?: string | null;
 }

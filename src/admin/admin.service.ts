@@ -874,6 +874,9 @@ export class AdminService {
         workExperience: {
           orderBy: { createdAt: 'desc' },
         },
+        professionalProjects: {
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
 
@@ -883,14 +886,21 @@ export class AdminService {
 
     // Type assertion to include description and socialMedia fields
     const professionalWithExtras = professional as any;
+    const { professionalProjects, ...professionalRest } = professional as any;
 
     return {
       success: true,
       data: {
-        ...professional,
+        ...professionalRest,
+        professionalProjects,
+        projects: professionalProjects ?? [],
         description: professionalWithExtras.description || null,
         socialMedia: professionalWithExtras.socialMedia || {},
-        profileImage: professionalWithExtras.profileImage || null,
+        profileImageUrl: professionalWithExtras.profileImageUrl || null,
+        profileImage:
+          professionalWithExtras.profileImageUrl ||
+          professionalWithExtras.profileImage ||
+          null,
       },
     };
   }
@@ -1583,7 +1593,7 @@ export class AdminService {
 
   async approveProfessionalVerification(
     profId: string,
-    type: 'identity' | 'education' | 'experience',
+    type: 'identity' | 'education' | 'experience' | 'project',
     verificationId: string,
     adminUserId: string,
     status: 'verified' | 'rejected' = 'verified',
@@ -1626,6 +1636,15 @@ export class AdminService {
           reviewedBy: adminUserId,
         },
       });
+    } else if (type === 'project') {
+      await this.prisma.professionalProject.update({
+        where: { id: verificationId },
+        data: {
+          verificationStatus: status as any,
+          verifiedAt,
+          reviewedBy: adminUserId,
+        },
+      });
     }
 
     return {
@@ -1641,6 +1660,7 @@ export class AdminService {
         identityVerification: true,
         education: true,
         workExperience: true,
+        professionalProjects: true,
       },
     });
 
@@ -1660,10 +1680,15 @@ export class AdminService {
       professional.workExperience.every(
         (w) => w.verificationStatus === 'verified' || w.verificationStatus === 'rejected',
       );
+    const projectsOk =
+      professional.professionalProjects.length === 0 ||
+      professional.professionalProjects.every(
+        (p) => p.verificationStatus === 'verified' || p.verificationStatus === 'rejected',
+      );
 
-    if (!identityOk || !educationOk || !workOk) {
+    if (!identityOk || !educationOk || !workOk || !projectsOk) {
       throw new BadRequestException(
-        'Cannot verify professional: identity must be verified and all education/work items must be verified or rejected (no pending).',
+        'Cannot verify professional: identity must be verified and all education/work/project items must be verified or rejected (no pending).',
       );
     }
 

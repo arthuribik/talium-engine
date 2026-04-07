@@ -305,7 +305,7 @@ export class AdminController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Approve or reject professional verification' })
   @ApiParam({ name: 'profId', description: 'Professional ID' })
-  @ApiParam({ name: 'type', enum: ['identity', 'education', 'experience'] })
+  @ApiParam({ name: 'type', enum: ['identity', 'education', 'experience', 'project'] })
   @ApiParam({ name: 'verificationId', description: 'Verification ID' })
   @ApiResponse({
     status: 200,
@@ -314,7 +314,7 @@ export class AdminController {
   async approveProfessionalVerification(
     @Request() req,
     @Param('profId') profId: string,
-    @Param('type') type: 'identity' | 'education' | 'experience',
+    @Param('type') type: 'identity' | 'education' | 'experience' | 'project',
     @Param('verificationId') verificationId: string,
     @Body() body: { status?: 'verified' | 'rejected' },
   ) {
