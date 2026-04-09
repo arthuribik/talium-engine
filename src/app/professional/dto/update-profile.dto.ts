@@ -45,45 +45,57 @@ class LocationItemDto {
   documentUrl?: string;
 }
 
+function isNonEmptyString(v: unknown): boolean {
+  return v != null && String(v).trim() !== '';
+}
+
 class SocialMediaDto {
   @ApiProperty({ required: false })
-  @IsUrl()
   @IsOptional()
+  @ValidateIf((_, v) => isNonEmptyString(v))
+  @IsUrl()
   linkedin?: string;
 
   @ApiProperty({ required: false })
-  @IsUrl()
   @IsOptional()
+  @ValidateIf((_, v) => isNonEmptyString(v))
+  @IsUrl()
   twitter?: string;
 
   @ApiProperty({ required: false })
-  @IsUrl()
   @IsOptional()
+  @ValidateIf((_, v) => isNonEmptyString(v))
+  @IsUrl()
   facebook?: string;
 
   @ApiProperty({ required: false })
-  @IsUrl()
   @IsOptional()
+  @ValidateIf((_, v) => isNonEmptyString(v))
+  @IsUrl()
   instagram?: string;
 
   @ApiProperty({ required: false })
-  @IsUrl()
   @IsOptional()
+  @ValidateIf((_, v) => isNonEmptyString(v))
+  @IsUrl()
   github?: string;
 
   @ApiProperty({ required: false })
-  @IsUrl()
   @IsOptional()
+  @ValidateIf((_, v) => isNonEmptyString(v))
+  @IsUrl()
   portfolio?: string;
 
   @ApiProperty({ required: false })
-  @IsUrl()
   @IsOptional()
+  @ValidateIf((_, v) => isNonEmptyString(v))
+  @IsUrl()
   tiktok?: string;
 
   @ApiProperty({ required: false })
-  @IsUrl()
   @IsOptional()
+  @ValidateIf((_, v) => isNonEmptyString(v))
+  @IsUrl()
   snapchat?: string;
 }
 

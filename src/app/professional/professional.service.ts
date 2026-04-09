@@ -924,16 +924,69 @@ export class ProfessionalService {
       (p) => p.verificationStatus === 'verified',
     );
 
+    const locationsJson = professionalWithExtras.locations;
+    const locationsArr = Array.isArray(locationsJson)
+      ? locationsJson
+      : locationsJson != null && typeof locationsJson === 'object'
+        ? [locationsJson]
+        : [];
+    const locationCompleted =
+      locationsArr.some((loc: any) => {
+        if (!loc || typeof loc !== 'object') return false;
+        const country = typeof loc.country === 'string' ? loc.country.trim() : '';
+        const address = typeof loc.address === 'string' ? loc.address.trim() : '';
+        const docUrl =
+          (typeof loc.documentUrl === 'string' && loc.documentUrl.trim()) ||
+          (typeof loc.document_url === 'string' && loc.document_url.trim()) ||
+          '';
+        return !!(country || address || docUrl);
+      }) ||
+      !!(professional.locationDocumentUrl && String(professional.locationDocumentUrl).trim()) ||
+      !!(professional.locationDocumentType && String(professional.locationDocumentType).trim()) ||
+      !!(professional.country && String(professional.country).trim());
+
+    const certsRaw = professionalWithExtras.certifications;
+    const certsArr = Array.isArray(certsRaw) ? certsRaw : [];
+    const certificationCompleted = certsArr.some((c: any) => {
+      const name = typeof c?.name === 'string' ? c.name.trim() : '';
+      const issuedBy = typeof c?.issuedBy === 'string' ? c.issuedBy.trim() : '';
+      return !!(name && issuedBy);
+    });
+    const certificationVerified = certsArr.some(
+      (c: any) => c?.verified === true || c?.certVerificationStatus === 'verified',
+    );
+
+    const familyRaw = professionalWithExtras.familyInfo;
+    let familyCompleted = false;
+    if (familyRaw && typeof familyRaw === 'object') {
+      const marital = typeof familyRaw.maritalStatus === 'string' ? familyRaw.maritalStatus.trim() : '';
+      const spouse = typeof familyRaw.spouseName === 'string' ? familyRaw.spouseName.trim() : '';
+      const relations = Array.isArray(familyRaw.relations) ? familyRaw.relations : [];
+      const hasValidRelation = relations.some((r: any) => {
+        const rt = typeof r?.relationType === 'string' ? r.relationType.trim() : '';
+        const fn = typeof r?.fullName === 'string' ? r.fullName.trim() : '';
+        return !!(rt && fn);
+      });
+      familyCompleted =
+        !!marital ||
+        hasValidRelation ||
+        (marital === 'married' && !!spouse);
+    }
+
     return {
       success: true,
       data: {
         personal: { completed: personalCompleted, verified: personalVerified },
+        location: { completed: locationCompleted, verified: false },
         education: { completed: educationCompleted, verified: educationVerified },
         social: { completed: hasSocial, verified: hasSocial },
         work: { completed: workCompleted, verified: workVerified },
         projects: { completed: projectsCompleted, verified: projectsVerified },
-        certification: { completed: false, verified: false },
-        family: { completed: false, verified: false },
+        certification: {
+          completed: certificationCompleted,
+          verified: certificationVerified,
+        },
+        family: { completed: familyCompleted, verified: false },
       },
     };
   }
