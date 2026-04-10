@@ -39,6 +39,7 @@ import { RevokeAccessDto } from './dto/revoke-access.dto';
 import { SendPhoneOtpDto } from './dto/send-phone-otp.dto';
 import { VerifyPhoneOtpDto } from './dto/verify-phone-otp.dto';
 import { VerifyAccountEmailCodeDto } from './dto/verify-account-email-code.dto';
+import { SubmitProfessionalProfileEditRequestDto } from './dto/submit-profile-edit-request.dto';
 
 @ApiTags('Professional')
 @Controller('professional')
@@ -216,6 +217,52 @@ export class ProfessionalController {
     return this.professionalService.uploadLivenessSelfie(req.user.userId, {
       buffer: file.buffer,
       originalname: file.originalname ?? 'liveness.jpg',
+      mimetype: file.mimetype,
+    });
+  }
+
+  @Post('profile/edit-request')
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({
+    summary: 'Request edits to verified personal profile data (fields, reason, supporting document)',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['fields', 'reason', 'file'],
+      properties: {
+        fields: {
+          type: 'string',
+          description: 'JSON array of field keys, e.g. ["firstName","email"]',
+        },
+        reason: {
+          type: 'string',
+          enum: [
+            'legal_name_change',
+            'clerical_error',
+            'outdated_information',
+            'government_id_reissued',
+            'other',
+          ],
+        },
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Edit request submitted' })
+  async submitProfileEditRequest(
+    @Request() req,
+    @Body() body: SubmitProfessionalProfileEditRequestDto,
+    @UploadedFile() file: { buffer?: Buffer; originalname?: string; mimetype?: string },
+  ) {
+    if (!file?.buffer) {
+      throw new BadRequestException('Supporting evidence document is required');
+    }
+    return this.professionalService.submitProfileEditRequest(req.user.userId, body, {
+      buffer: file.buffer,
+      originalname: file.originalname ?? 'document',
       mimetype: file.mimetype,
     });
   }

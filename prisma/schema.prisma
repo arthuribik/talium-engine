@@ -259,8 +259,28 @@ model Professional {
   professionalProjects ProfessionalProject[]
   jobApplications      JobApplication[]
   savedJobs            SavedJob[]
+  profileEditRequests  ProfessionalProfileEditRequest[]
 
   @@map("professionals")
+}
+
+model ProfessionalProfileEditRequest {
+  id                    String             @id @default(cuid())
+  professionalId      String
+  fields                Json
+  reason                String
+  supportingDocumentUrl String?
+  status                VerificationStatus @default(under_review)
+  submittedAt           DateTime           @default(now())
+  reviewedAt            DateTime?
+  reviewedBy            String?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+
+  @@index([professionalId])
+  @@map("professional_profile_edit_requests")
 }
 
 model IdentityVerification {

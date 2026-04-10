@@ -48,4 +48,12 @@ export class RegisterDto {
   @IsString()
   @IsOptional()
   phoneNumber?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'Professional headline / current job title',
+  })
+  @IsString()
+  @IsOptional()
+  profession?: string;
 }

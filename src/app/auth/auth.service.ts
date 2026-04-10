@@ -51,7 +51,11 @@ export class AuthService {
     // Hash provided password
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
 
-    // Generate verification token
+    const emailKey = registerDto.email.trim().toLowerCase();
+    const preSignupEmailVerified =
+      this.emailVerificationCodes.get(emailKey)?.verified === true;
+
+    // Generate verification token (only if email was not already verified via /join OTP flow)
     const verificationToken = this.generateToken();
     const verificationExpiry = new Date();
     verificationExpiry.setHours(verificationExpiry.getHours() + 24);
@@ -65,37 +69,46 @@ export class AuthService {
         lastName: registerDto.lastName,
         phoneNumber: registerDto.phoneNumber,
         userType: 'PROFESSIONAL',
-        status: 'UNVERIFIED',
-        emailVerifyToken: verificationToken,
-        emailVerifyExpiry: verificationExpiry,
+        status: preSignupEmailVerified ? 'VERIFIED' : 'UNVERIFIED',
+        emailVerified: preSignupEmailVerified,
+        emailVerifyToken: preSignupEmailVerified ? null : verificationToken,
+        emailVerifyExpiry: preSignupEmailVerified ? null : verificationExpiry,
       },
     });
+
+    if (preSignupEmailVerified) {
+      this.emailVerificationCodes.delete(emailKey);
+    }
 
     // Create professional profile
     await this.prisma.professional.create({
       data: {
         userId: user.id,
         country: registerDto.country,
+        profession: registerDto.profession?.trim() || undefined,
       },
     });
 
-    const html = `
+    if (!preSignupEmailVerified) {
+      const html = `
       <h2>Welcome to taldium, ${user.firstName}!</h2>
       <p>Thank you for registering. Please verify your email by entering this OTP (One Time Password).:</p>
       <p><strong>${verificationToken}</strong></p>
       <p>This OTP will expire in 24 hours.</p>
     `;
 
-    this.eventEmitter.emit(AuthServiceEvents.SEND_VERIFICATION_EMAIL, {
-      to: user.email,
-      subject: 'Verify your email',
-      html: html,
-    });
+      this.eventEmitter.emit(AuthServiceEvents.SEND_VERIFICATION_EMAIL, {
+        to: user.email,
+        subject: 'Verify your email',
+        html: html,
+      });
+    }
 
     return {
       status: 'success',
-      message:
-        'Registration successful. Please check your email to verify your account.',
+      message: preSignupEmailVerified
+        ? 'Registration successful. Your email is verified — you can sign in.'
+        : 'Registration successful. Please check your email to verify your account.',
     };
   }
 

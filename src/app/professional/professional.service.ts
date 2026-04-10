@@ -1974,4 +1974,84 @@ export class ProfessionalService {
     });
     return { success: true, message: 'Email verified successfully' };
   }
+
+  private static readonly PROFILE_EDIT_ALLOWED_FIELDS = new Set([
+    'firstName',
+    'middleName',
+    'nationality',
+    'email',
+    'lastName',
+    'dateOfBirth',
+    'gender',
+    'phoneNumber',
+  ]);
+
+  async submitProfileEditRequest(
+    userId: string,
+    dto: { fields: string; reason: string },
+    file: { buffer: Buffer; originalname: string; mimetype?: string },
+  ) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(dto.fields);
+    } catch {
+      throw new BadRequestException('Invalid fields payload');
+    }
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      throw new BadRequestException('Select at least one field to edit');
+    }
+    const fields = parsed.filter((k): k is string => typeof k === 'string');
+    const normalized = [...new Set(fields)].filter((k) =>
+      ProfessionalService.PROFILE_EDIT_ALLOWED_FIELDS.has(k),
+    );
+    if (normalized.length === 0) {
+      throw new BadRequestException('No valid fields selected');
+    }
+
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Supporting evidence document is required');
+    }
+    const mime = file.mimetype || '';
+    const allowed =
+      mime.startsWith('image/') || mime === 'application/pdf' || mime === 'application/x-pdf';
+    if (!allowed) {
+      throw new BadRequestException('Supporting evidence must be an image or PDF');
+    }
+    const maxBytes = 15 * 1024 * 1024;
+    if (file.buffer.length > maxBytes) {
+      throw new BadRequestException('Supporting document must be at most 15 MB');
+    }
+    const safeName = (file.originalname || 'evidence').replace(/[^a-zA-Z0-9.-]/g, '_');
+    const filename = `${professional.id}-edit-req-${Date.now()}-${safeName}`;
+    const supportingDocumentUrl = await this.s3.upload(file.buffer, filename, {
+      prefix: 'profile-edit-requests',
+      contentType: file.mimetype,
+    });
+
+    const row = await this.prisma.professionalProfileEditRequest.create({
+      data: {
+        professionalId: professional.id,
+        fields: normalized,
+        reason: dto.reason,
+        supportingDocumentUrl,
+        status: 'under_review',
+      },
+    });
+
+    return {
+      id: row.id,
+      status: row.status,
+      submittedAt: row.submittedAt,
+      fields: normalized,
+      reason: row.reason,
+      supportingDocumentUrl: row.supportingDocumentUrl,
+    };
+  }
 }
