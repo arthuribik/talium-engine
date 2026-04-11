@@ -331,6 +331,8 @@ model Education {
   associatedSkills      String?
   supportingMediaUrl    String?
   country               String
+  isDefault             Boolean            @default(false)
+  verificationMethod    String?
   verificationStatus    VerificationStatus @default(pending)
   verificationDocuments Json?
   verifiedAt            DateTime?

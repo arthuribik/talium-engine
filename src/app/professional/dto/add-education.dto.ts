@@ -203,6 +203,16 @@ export class AddEducationDto {
   @IsNotEmpty()
   country: string;
 
+  @ApiProperty({ required: false })
+  @IsBoolean()
+  @IsOptional()
+  isDefault?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  verificationMethod?: string;
+
   @ApiProperty({ type: [VerificationDocumentDto], required: false })
   @IsArray()
   @IsOptional()

@@ -9,6 +9,7 @@ import {
   IsEnum,
   IsArray,
   ValidateIf,
+  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { IDType } from '@prisma/client';
@@ -43,6 +44,16 @@ class LocationItemDto {
   @IsString()
   @IsOptional()
   documentUrl?: string;
+
+  @ApiProperty({ required: false, description: 'Primary location when multiple are saved' })
+  @IsBoolean()
+  @IsOptional()
+  isDefault?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  residenceType?: string;
 }
 
 function isNonEmptyString(v: unknown): boolean {

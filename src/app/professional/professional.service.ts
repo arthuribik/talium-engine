@@ -310,6 +310,14 @@ export class ProfessionalService {
       );
     }
 
+    const isDefault = !!educationDto.isDefault;
+    if (isDefault) {
+      await this.prisma.education.updateMany({
+        where: { professionalId: profId },
+        data: { isDefault: false },
+      });
+    }
+
     // Create education record
     const education = await this.prisma.education.create({
       data: {
@@ -342,6 +350,8 @@ export class ProfessionalService {
         associatedSkills: educationDto.associatedSkills,
         supportingMediaUrl: educationDto.supportingMediaUrl,
         country: educationDto.country,
+        isDefault,
+        verificationMethod: educationDto.verificationMethod ?? null,
         verificationDocuments: educationDto.verificationDocuments as any,
         verificationStatus: 'pending',
       },
@@ -372,6 +382,31 @@ export class ProfessionalService {
       throw new ForbiddenException(
         'You do not have permission to update this profile',
       );
+    }
+
+    // Idempotency: duplicate client submits (e.g. React Strict Mode double-invoking state
+    // updaters) must not create two identical rows within a short window.
+    const DUPLICATE_WINDOW_MS = 15_000;
+    const org = experienceDto.organisationName.trim();
+    const role = experienceDto.role.trim();
+    const recentDuplicate = await this.prisma.workExperience.findFirst({
+      where: {
+        professionalId: profId,
+        organisationName: org,
+        role,
+        startDate: experienceDto.startDate,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (
+      recentDuplicate &&
+      Date.now() - recentDuplicate.createdAt.getTime() < DUPLICATE_WINDOW_MS
+    ) {
+      return {
+        success: true,
+        message: 'Work experience added successfully',
+        data: recentDuplicate,
+      };
     }
 
     // Create work experience record
@@ -424,6 +459,17 @@ export class ProfessionalService {
       );
     }
 
+    const isDefault = !!educationDto.isDefault;
+    if (isDefault) {
+      await this.prisma.education.updateMany({
+        where: {
+          professionalId: education.professionalId,
+          NOT: { id: educationId },
+        },
+        data: { isDefault: false },
+      });
+    }
+
     const updated = await this.prisma.education.update({
       where: { id: educationId },
       data: {
@@ -455,6 +501,8 @@ export class ProfessionalService {
         associatedSkills: educationDto.associatedSkills,
         supportingMediaUrl: educationDto.supportingMediaUrl,
         country: educationDto.country,
+        isDefault,
+        verificationMethod: educationDto.verificationMethod ?? null,
         verificationDocuments: educationDto.verificationDocuments as any,
         verificationStatus: 'pending',
         verifiedAt: null,
