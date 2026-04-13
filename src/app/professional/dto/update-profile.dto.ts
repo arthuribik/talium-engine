@@ -54,6 +54,11 @@ class LocationItemDto {
   @IsString()
   @IsOptional()
   residenceType?: string;
+
+  @ApiProperty({ required: false, description: 'Admin-set row status for document-backed locations' })
+  @IsString()
+  @IsOptional()
+  verificationStatus?: string;
 }
 
 function isNonEmptyString(v: unknown): boolean {

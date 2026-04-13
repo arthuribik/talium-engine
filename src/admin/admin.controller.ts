@@ -8,6 +8,7 @@ import {
   Request,
   Param,
   Query,
+  ParseIntPipe,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -322,6 +323,27 @@ export class AdminController {
       profId,
       type,
       verificationId,
+      req.user.userId,
+      body?.status ?? 'verified',
+    );
+  }
+
+  @Put('professionals/:profId/verify-location/:locationIndex')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Approve or reject a saved location row (JSON locations array)' })
+  @ApiParam({ name: 'profId', description: 'Professional ID' })
+  @ApiParam({ name: 'locationIndex', description: 'Zero-based index in the locations array' })
+  @ApiResponse({ status: 200, description: 'Location verification status updated' })
+  async approveProfessionalLocation(
+    @Request() req,
+    @Param('profId') profId: string,
+    @Param('locationIndex', ParseIntPipe) locationIndex: number,
+    @Body() body: { status?: 'verified' | 'rejected' },
+  ) {
+    return this.adminService.approveProfessionalLocation(
+      profId,
+      locationIndex,
       req.user.userId,
       body?.status ?? 'verified',
     );

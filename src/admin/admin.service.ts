@@ -1656,6 +1656,60 @@ export class AdminService {
     };
   }
 
+  async approveProfessionalLocation(
+    profId: string,
+    locationIndex: number,
+    adminUserId: string,
+    status: 'verified' | 'rejected' = 'verified',
+  ) {
+    if (!Number.isInteger(locationIndex) || locationIndex < 0) {
+      throw new BadRequestException('Invalid location index');
+    }
+
+    const professional = await this.prisma.professional.findUnique({
+      where: { id: profId },
+    });
+
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    const prof = professional as Record<string, unknown>;
+    const locationsJson = prof['locations'];
+    const locationsArr: unknown[] = Array.isArray(locationsJson)
+      ? [...locationsJson]
+      : locationsJson != null && typeof locationsJson === 'object'
+        ? [{ ...(locationsJson as object) }]
+        : [];
+
+    if (locationIndex >= locationsArr.length) {
+      throw new BadRequestException('Invalid location index');
+    }
+
+    const next = locationsArr.map((loc, i) => {
+      if (i !== locationIndex) return loc;
+      if (!loc || typeof loc !== 'object') {
+        throw new BadRequestException('Invalid location entry');
+      }
+      return {
+        ...(loc as object),
+        verificationStatus: status,
+        locationReviewedBy: adminUserId,
+        locationReviewedAt: new Date().toISOString(),
+      };
+    });
+
+    await this.prisma.professional.update({
+      where: { id: profId },
+      data: { locations: next as any },
+    });
+
+    return {
+      success: true,
+      message: status === 'verified' ? 'Location verification approved' : 'Location verification rejected',
+    };
+  }
+
   async markProfessionalVerificationComplete(profId: string, adminUserId: string) {
     const professional = await this.prisma.professional.findUnique({
       where: { id: profId },

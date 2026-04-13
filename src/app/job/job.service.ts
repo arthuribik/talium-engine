@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../../utility/prisma/prisma.service';
 import { CreateJobDto } from './dto/create-job.dto';
 import { ApplyJobDto } from './dto/apply-job.dto';
+import { canProfessionalApplyToJobs } from '../../common/can-professional-apply-to-jobs';
 
 @Injectable()
 export class JobService {
@@ -216,10 +217,34 @@ export class JobService {
     // Verify user is professional
     const professional = await this.prisma.professional.findFirst({
       where: { userId },
+      include: {
+        user: {
+          select: {
+            status: true,
+            emailVerified: true,
+            phoneVerified: true,
+          },
+        },
+      },
     });
 
     if (!professional) {
       throw new ForbiddenException('Only professionals can apply to jobs');
+    }
+
+    const canApply = canProfessionalApplyToJobs({
+      userStatus: professional.user.status,
+      emailVerified: professional.user.emailVerified,
+      phoneVerified: professional.user.phoneVerified,
+      livenessSelfieUrl: professional.livenessSelfieUrl,
+      isPersonalCompleted: professional.isPersonalCompleted,
+      setupCompleted: professional.setupCompleted,
+    });
+
+    if (!canApply) {
+      throw new ForbiddenException(
+        'Finish account setup (verify email and phone, complete identity steps) or wait until an administrator activates your account before applying to jobs.',
+      );
     }
 
     // Check if job exists

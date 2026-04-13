@@ -241,6 +241,8 @@ model Professional {
   profileImageUrl      String?
   /// Liveness verification selfie (S3); separate from public profile photo
   livenessSelfieUrl    String?
+  /// Set when the professional has finished the personal verification liveness step (persists across reloads).
+  isPersonalCompleted  Boolean            @default(false)
   /// IANA timezone, e.g. Africa/Lagos
   timezone             String?
   locations            Json?

@@ -14,6 +14,7 @@ import { AddEducationDto } from './dto/add-education.dto';
 import { AddExperienceDto } from './dto/add-experience.dto';
 import { AddProjectDto } from './dto/add-project.dto';
 import { InitiatePaymentDto } from '../organisation/dto/initiate-payment.dto';
+import { canProfessionalApplyToJobs } from '../../common/can-professional-apply-to-jobs';
 
 @Injectable()
 export class ProfessionalService {
@@ -34,6 +35,101 @@ export class ProfessionalService {
     private s3: S3Service,
     private eventEmitter: EventEmitter2,
   ) {}
+
+  /** Aligns with admin VerificationCenter: self-declaration paths skip document review. */
+  private normalizeSelfDeclarationKey(v: unknown): string {
+    return String(v ?? '')
+      .toLowerCase()
+      .replace(/-/g, '_');
+  }
+
+  private isVerificationSelfDeclarationMethod(v: unknown): boolean {
+    const s = this.normalizeSelfDeclarationKey(v);
+    return s === 'self_declaration' || s === 'self_declared';
+  }
+
+  private isEducationSelfDeclaredForVerificationAggregate(edu: {
+    verificationMethod?: string | null;
+  }): boolean {
+    return this.isVerificationSelfDeclarationMethod(edu?.verificationMethod);
+  }
+
+  private isWorkSelfDeclaredForVerificationAggregate(exp: { verificationContact?: unknown }): boolean {
+    const vc =
+      exp?.verificationContact && typeof exp.verificationContact === 'object'
+        ? (exp.verificationContact as Record<string, unknown>)
+        : {};
+    const email = String(vc['email'] ?? '').trim();
+    const website = String(vc['website'] ?? '').trim();
+    return !email && !website;
+  }
+
+  private isProjectSelfDeclaredForVerificationAggregate(proj: {
+    verificationMethod?: string | null;
+    selfDeclared?: boolean | null;
+    projectSelfDeclared?: boolean | null;
+  }): boolean {
+    return (
+      this.isVerificationSelfDeclarationMethod(proj?.verificationMethod) ||
+      proj?.selfDeclared === true ||
+      proj?.projectSelfDeclared === true
+    );
+  }
+
+  private isLocationSelfDeclaredForVerificationAggregate(loc: any): boolean {
+    if (!loc || typeof loc !== 'object') return false;
+    const dt = this.normalizeSelfDeclarationKey(loc.documentType);
+    if (dt === 'self_declaration' || dt === 'self_declared') return true;
+    return String(loc?.verificationStatus ?? '').toLowerCase() === 'self_declared';
+  }
+
+  /** Document-backed rows count only after explicit verified status (or digital_verify); uploads alone are not enough. */
+  private isLocationRowVerifiedForVerificationAggregate(loc: any): boolean {
+    if (!loc || typeof loc !== 'object') return false;
+    if (this.isLocationSelfDeclaredForVerificationAggregate(loc)) return true;
+    const dt = this.normalizeSelfDeclarationKey(loc.documentType);
+    if (dt === 'digital_verify') return true;
+    const vs = String(loc?.verificationStatus ?? loc?.documentVerificationStatus ?? '').toLowerCase();
+    return vs === 'verified';
+  }
+
+  private isCertSelfDeclaredForVerificationAggregate(cert: any): boolean {
+    return !!(cert?.certSelfDeclared || cert?.selfDeclared);
+  }
+
+  private isCertRowVerifiedForVerificationAggregate(cert: any): boolean {
+    if (this.isCertSelfDeclaredForVerificationAggregate(cert)) return true;
+    if (cert?.verified === true) return true;
+    if (String(cert?.certVerificationStatus ?? '').toLowerCase() === 'verified') return true;
+    if (String(cert?.verificationStatus ?? '').toLowerCase() === 'verified') return true;
+    return false;
+  }
+
+  private educationRowVerifiedForVerificationAggregate(e: {
+    verificationMethod?: string | null;
+    verificationStatus: string;
+  }): boolean {
+    if (this.isEducationSelfDeclaredForVerificationAggregate(e)) return true;
+    return e.verificationStatus === 'verified';
+  }
+
+  private workRowVerifiedForVerificationAggregate(w: {
+    verificationContact?: unknown;
+    verificationStatus: string;
+  }): boolean {
+    if (this.isWorkSelfDeclaredForVerificationAggregate(w)) return true;
+    return w.verificationStatus === 'verified';
+  }
+
+  private projectRowVerifiedForVerificationAggregate(p: {
+    verificationMethod?: string | null;
+    selfDeclared?: boolean | null;
+    projectSelfDeclared?: boolean | null;
+    verificationStatus: string;
+  }): boolean {
+    if (this.isProjectSelfDeclaredForVerificationAggregate(p)) return true;
+    return p.verificationStatus === 'verified';
+  }
 
   private normalizeProfessionalTimezone(value: unknown): string | null {
     if (value === null || value === undefined) {
@@ -196,7 +292,7 @@ export class ProfessionalService {
     });
     await this.prisma.professional.update({
       where: { userId },
-      data: { livenessSelfieUrl: url },
+      data: { livenessSelfieUrl: url, isPersonalCompleted: true },
     });
     return { url, livenessSelfieUrl: url };
   }
@@ -906,10 +1002,24 @@ export class ProfessionalService {
     const professionalWithExtras = professional as any;
     const { professionalProjects, ...professionalRest } = professional as any;
 
+    const canApplyToJobs = canProfessionalApplyToJobs({
+      userStatus: professional.user.status,
+      emailVerified: professional.user.emailVerified,
+      phoneVerified: professional.user.phoneVerified,
+      livenessSelfieUrl: professional.livenessSelfieUrl,
+      isPersonalCompleted: professional.isPersonalCompleted,
+      setupCompleted: professional.setupCompleted,
+    });
+
+    const ivNat = professional.identityVerification?.nationality?.trim();
+    const profNat = professional.nationality?.trim();
+    const nationalityForProfile = profNat || ivNat || null;
+
     return {
       success: true,
       data: {
         ...professionalRest,
+        nationality: nationalityForProfile,
         professionalProjects,
         projects: professionalProjects ?? [],
         description: professionalWithExtras.description || null,
@@ -918,6 +1028,7 @@ export class ProfessionalService {
         middleName: professionalWithExtras.middleName ?? null,
         certifications: professionalWithExtras.certifications ?? null,
         familyInfo: professionalWithExtras.familyInfo ?? null,
+        canApplyToJobs,
       },
     };
   }
@@ -958,19 +1069,19 @@ export class ProfessionalService {
       professional.identityStatus === 'verified' || !!professional.identityVerification?.verifiedAt;
 
     const educationCompleted = professional.education.length > 0;
-    const educationVerified = professional.education.some(
-      (e) => e.verificationStatus === 'verified',
-    );
+    const educationVerified =
+      educationCompleted &&
+      professional.education.every((e) => this.educationRowVerifiedForVerificationAggregate(e));
 
     const workCompleted = professional.workExperience.length > 0;
-    const workVerified = professional.workExperience.some(
-      (e) => e.verificationStatus === 'verified',
-    );
+    const workVerified =
+      workCompleted &&
+      professional.workExperience.every((e) => this.workRowVerifiedForVerificationAggregate(e));
 
     const projectsCompleted = professional.professionalProjects.length > 0;
-    const projectsVerified = professional.professionalProjects.some(
-      (p) => p.verificationStatus === 'verified',
-    );
+    const projectsVerified =
+      projectsCompleted &&
+      professional.professionalProjects.every((p) => this.projectRowVerifiedForVerificationAggregate(p));
 
     const locationsJson = professionalWithExtras.locations;
     const locationsArr = Array.isArray(locationsJson)
@@ -1000,9 +1111,14 @@ export class ProfessionalService {
       const issuedBy = typeof c?.issuedBy === 'string' ? c.issuedBy.trim() : '';
       return !!(name && issuedBy);
     });
-    const certificationVerified = certsArr.some(
-      (c: any) => c?.verified === true || c?.certVerificationStatus === 'verified',
-    );
+    const certificationVerified =
+      certsArr.length > 0 &&
+      certsArr.every((c: any) => {
+        const name = typeof c?.name === 'string' ? c.name.trim() : '';
+        const issuedBy = typeof c?.issuedBy === 'string' ? c.issuedBy.trim() : '';
+        if (!name || !issuedBy) return false;
+        return this.isCertRowVerifiedForVerificationAggregate(c);
+      });
 
     const familyRaw = professionalWithExtras.familyInfo;
     let familyCompleted = false;
@@ -1025,7 +1141,12 @@ export class ProfessionalService {
       success: true,
       data: {
         personal: { completed: personalCompleted, verified: personalVerified },
-        location: { completed: locationCompleted, verified: false },
+        location: {
+          completed: locationCompleted,
+          verified:
+            locationsArr.length > 0 &&
+            locationsArr.every((loc: any) => this.isLocationRowVerifiedForVerificationAggregate(loc)),
+        },
         education: { completed: educationCompleted, verified: educationVerified },
         social: { completed: hasSocial, verified: hasSocial },
         work: { completed: workCompleted, verified: workVerified },
