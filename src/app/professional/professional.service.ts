@@ -1061,9 +1061,10 @@ export class ProfessionalService {
 
     const hasRequiredIdFields =
       !!(professional.idType && professional.idNumber && professional.idDocumentUrl);
+    /** Do not treat signup demographics or home country alone as "personal" / "location" verification progress. */
     const personalCompleted =
       hasRequiredIdFields ||
-      !!(professional.country || professional.nationality || professional.dateOfBirth) ||
+      professional.isPersonalCompleted === true ||
       !!professional.identityVerification;
     const personalVerified =
       professional.identityStatus === 'verified' || !!professional.identityVerification?.verifiedAt;
@@ -1101,8 +1102,7 @@ export class ProfessionalService {
         return !!(country || address || docUrl);
       }) ||
       !!(professional.locationDocumentUrl && String(professional.locationDocumentUrl).trim()) ||
-      !!(professional.locationDocumentType && String(professional.locationDocumentType).trim()) ||
-      !!(professional.country && String(professional.country).trim());
+      !!(professional.locationDocumentType && String(professional.locationDocumentType).trim());
 
     const certsRaw = professionalWithExtras.certifications;
     const certsArr = Array.isArray(certsRaw) ? certsRaw : [];
