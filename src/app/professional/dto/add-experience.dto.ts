@@ -39,23 +39,6 @@ class SalaryRangeDto {
   max: number;
 }
 
-class VerificationContactDto {
-  @ApiProperty({ required: false })
-  @IsString()
-  @IsOptional()
-  name?: string;
-
-  @ApiProperty({ required: false })
-  @IsString()
-  @IsOptional()
-  email?: string;
-
-  @ApiProperty({ required: false, description: 'Company website for verification' })
-  @IsString()
-  @IsOptional()
-  website?: string;
-}
-
 export class AddExperienceDto {
   @ApiProperty()
   @IsString()
@@ -103,6 +86,11 @@ export class AddExperienceDto {
   @IsNotEmpty()
   currentlyWorking: boolean;
 
+  @ApiProperty({ required: false, description: 'Job / role description (stored separately from responsibilities)' })
+  @IsString()
+  @IsOptional()
+  jobDescription?: string;
+
   @ApiProperty({ type: [String] })
   @IsArray()
   @IsString({ each: true })
@@ -130,10 +118,21 @@ export class AddExperienceDto {
   @Type(() => SalaryRangeDto)
   salaryRange?: SalaryRangeDto;
 
-  @ApiProperty({ type: VerificationContactDto, required: false })
-  @IsObject()
+  @ApiProperty({ required: false, description: 'How the user chose to verify (e.g. self_declaration, work_email)' })
+  @IsString()
   @IsOptional()
-  @ValidateNested()
-  @Type(() => VerificationContactDto)
-  verificationContact?: VerificationContactDto;
+  verificationMethod?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'Work email used for OTP verification (read-only from server after verify)',
+  })
+  @IsString()
+  @IsOptional()
+  workVerificationEmail?: string;
+
+  @ApiProperty({ required: false, description: 'Supporting document URL for upload_document flow' })
+  @IsString()
+  @IsOptional()
+  supportingMediaUrl?: string;
 }

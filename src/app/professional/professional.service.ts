@@ -30,6 +30,18 @@ export class ProfessionalService {
     { code: string; expiresAt: Date; email: string }
   >();
 
+  /** Student institution email OTP: key `${userId}:${educationId}` */
+  private educationStudentEmailOtpStore = new Map<
+    string,
+    { code: string; expiresAt: Date; email: string }
+  >();
+
+  /** Work company email OTP: key `${userId}:${experienceId}` */
+  private experienceWorkEmailOtpStore = new Map<
+    string,
+    { code: string; expiresAt: Date; email: string }
+  >();
+
   constructor(
     private prisma: PrismaService,
     private s3: S3Service,
@@ -54,14 +66,10 @@ export class ProfessionalService {
     return this.isVerificationSelfDeclarationMethod(edu?.verificationMethod);
   }
 
-  private isWorkSelfDeclaredForVerificationAggregate(exp: { verificationContact?: unknown }): boolean {
-    const vc =
-      exp?.verificationContact && typeof exp.verificationContact === 'object'
-        ? (exp.verificationContact as Record<string, unknown>)
-        : {};
-    const email = String(vc['email'] ?? '').trim();
-    const website = String(vc['website'] ?? '').trim();
-    return !email && !website;
+  private isWorkSelfDeclaredForVerificationAggregate(exp: {
+    verificationMethod?: string | null;
+  }): boolean {
+    return this.isVerificationSelfDeclarationMethod(exp?.verificationMethod);
   }
 
   private isProjectSelfDeclaredForVerificationAggregate(proj: {
@@ -114,7 +122,7 @@ export class ProfessionalService {
   }
 
   private workRowVerifiedForVerificationAggregate(w: {
-    verificationContact?: unknown;
+    verificationMethod?: string | null;
     verificationStatus: string;
   }): boolean {
     if (this.isWorkSelfDeclaredForVerificationAggregate(w)) return true;
@@ -129,6 +137,41 @@ export class ProfessionalService {
   }): boolean {
     if (this.isProjectSelfDeclaredForVerificationAggregate(p)) return true;
     return p.verificationStatus === 'verified';
+  }
+
+  private normalizeProjectTeamMembersForCompare(
+    raw: unknown,
+  ): Array<{ name: string; role: string }> {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((m: { name?: unknown; role?: unknown }) => ({
+        name: String(m?.name ?? '').trim(),
+        role: String(m?.role ?? '').trim(),
+      }))
+      .filter((m) => m.name || m.role)
+      .sort((a, b) => `${a.name}\0${a.role}`.localeCompare(`${b.name}\0${b.role}`));
+  }
+
+  private professionalProjectCoreContentEqual(
+    project: {
+      title: string;
+      description: string | null;
+      projectLink: string | null;
+      mediaUrl: string | null;
+      teamMembers: unknown;
+    },
+    dto: AddProjectDto,
+    normalizedIncomingTeam: Array<{ name: string; role: string }>,
+  ): boolean {
+    const incomingNorm = this.normalizeProjectTeamMembersForCompare(normalizedIncomingTeam);
+    return (
+      project.title.trim() === dto.title.trim() &&
+      (project.description || '').trim() === (dto.description || '').trim() &&
+      (project.projectLink || '').trim() === (dto.projectLink || '').trim() &&
+      (project.mediaUrl || '').trim() === (dto.mediaUrl || '').trim() &&
+      JSON.stringify(this.normalizeProjectTeamMembersForCompare(project.teamMembers)) ===
+        JSON.stringify(incomingNorm)
+    );
   }
 
   private normalizeProfessionalTimezone(value: unknown): string | null {
@@ -148,6 +191,69 @@ export class ProfessionalService {
       throw new BadRequestException('Invalid timezone identifier');
     }
     return trimmed;
+  }
+
+  /**
+   * Whitelist fields for Professional.certifications (JSONB) and persist
+   * self-declaration / verification metadata the verification UI relies on.
+   */
+  private normalizeCertificationsJsonForPersistence(raw: unknown): any[] {
+    if (!Array.isArray(raw)) {
+      throw new BadRequestException('certifications must be an array');
+    }
+    const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+    const optionalStr = (v: unknown) => {
+      const t = str(v);
+      return t ? t : undefined;
+    };
+    return raw.map((item, idx) => {
+      if (!item || typeof item !== 'object') {
+        throw new BadRequestException(`certifications[${idx}] must be an object`);
+      }
+      const c = item as Record<string, unknown>;
+      const name = str(c.name);
+      const issuedBy = str(c.issuedBy);
+      const issuedDate = optionalStr(c.issuedDate);
+      const expirationDate = optionalStr(c.expirationDate);
+      const credentialId = str(c.credentialId);
+      const reportingUrl = optionalStr(c.reportingUrl);
+      const supportingMediaUrl = optionalStr(c.supportingMediaUrl);
+      const associatedSkills = optionalStr(c.associatedSkills);
+
+      const vmRaw = str(c.verificationMethod);
+      const statusFromFields = str(c.certVerificationStatus || c.verificationStatus).toLowerCase();
+      const isVerified =
+        statusFromFields === 'verified' || c.verified === true || c.verified === 'true';
+      const certSelfDeclared =
+        !isVerified &&
+        (!!(c.certSelfDeclared ?? c.selfDeclared) || this.isVerificationSelfDeclarationMethod(vmRaw));
+
+      const out: Record<string, unknown> = {
+        name,
+        issuedBy,
+        credentialId,
+        certVerificationStatus: isVerified ? 'verified' : 'pending',
+        verified: isVerified,
+        certSelfDeclared,
+      };
+      if (issuedDate) out.issuedDate = issuedDate;
+      if (expirationDate) out.expirationDate = expirationDate;
+      if (reportingUrl) out.reportingUrl = reportingUrl;
+      if (supportingMediaUrl) out.supportingMediaUrl = supportingMediaUrl;
+      if (associatedSkills) out.associatedSkills = associatedSkills;
+
+      if (isVerified) {
+        return out;
+      }
+      if (certSelfDeclared) {
+        out.verificationMethod = this.isVerificationSelfDeclarationMethod(vmRaw)
+          ? vmRaw
+          : 'self_declaration';
+      } else if (vmRaw) {
+        out.verificationMethod = vmRaw;
+      }
+      return out;
+    });
   }
 
   private normalizeEducationProgramProgression(
@@ -450,6 +556,7 @@ export class ProfessionalService {
         verificationMethod: educationDto.verificationMethod ?? null,
         verificationDocuments: educationDto.verificationDocuments as any,
         verificationStatus: 'pending',
+        studentVerificationEmail: educationDto.studentVerificationEmail?.trim() || null,
       },
     });
 
@@ -518,12 +625,15 @@ export class ProfessionalService {
         startDate: experienceDto.startDate,
         endDate: experienceDto.endDate,
         currentlyWorking: experienceDto.currentlyWorking,
+        jobDescription: experienceDto.jobDescription?.trim() || null,
         responsibilities: experienceDto.responsibilities,
         achievements: experienceDto.achievements,
         paymentMode: experienceDto.paymentMode,
         currency: experienceDto.currency,
         salaryRange: experienceDto.salaryRange as any,
-        verificationContact: experienceDto.verificationContact as any,
+        verificationMethod: experienceDto.verificationMethod?.trim() || null,
+        workVerificationEmail: experienceDto.workVerificationEmail?.trim() || null,
+        supportingMediaUrl: experienceDto.supportingMediaUrl?.trim() || null,
         verificationStatus: 'pending',
       },
     });
@@ -554,6 +664,18 @@ export class ProfessionalService {
         'You do not have permission to update this education record',
       );
     }
+
+    const coreFieldsUnchanged =
+      education.institutionName.trim() === educationDto.institutionName.trim() &&
+      education.fieldOfStudy.trim() === educationDto.fieldOfStudy.trim() &&
+      (education.degreeType || '').trim() === (educationDto.degreeType || '').trim() &&
+      String(education.levelOfEducation) === String(educationDto.levelOfEducation) &&
+      education.startDate === educationDto.startDate &&
+      (education.endDate || '') === (educationDto.endDate || '') &&
+      education.country.trim() === educationDto.country.trim();
+
+    const keepVerificationState =
+      education.verificationStatus === 'verified' && coreFieldsUnchanged;
 
     const isDefault = !!educationDto.isDefault;
     if (isDefault) {
@@ -600,9 +722,12 @@ export class ProfessionalService {
         isDefault,
         verificationMethod: educationDto.verificationMethod ?? null,
         verificationDocuments: educationDto.verificationDocuments as any,
-        verificationStatus: 'pending',
-        verifiedAt: null,
-        reviewedBy: null,
+        verificationStatus: keepVerificationState ? 'verified' : 'pending',
+        verifiedAt: keepVerificationState ? education.verifiedAt : null,
+        reviewedBy: keepVerificationState ? education.reviewedBy : null,
+        studentVerificationEmail: keepVerificationState
+          ? education.studentVerificationEmail
+          : educationDto.studentVerificationEmail?.trim() || null,
       },
     });
 
@@ -638,6 +763,20 @@ export class ProfessionalService {
       );
     }
 
+    const coreFieldsUnchanged =
+      experience.organisationName.trim() === experienceDto.organisationName.trim() &&
+      experience.industry.trim() === experienceDto.industry.trim() &&
+      experience.role.trim() === experienceDto.role.trim() &&
+      experience.startDate === experienceDto.startDate &&
+      (experience.endDate || '') === (experienceDto.endDate || '') &&
+      experience.currentlyWorking === experienceDto.currentlyWorking &&
+      String(experience.employmentType) === String(experienceDto.employmentType) &&
+      String(experience.workMode) === String(experienceDto.workMode) &&
+      (experience.jobDescription || '').trim() === (experienceDto.jobDescription || '').trim();
+
+    const keepVerificationState =
+      experience.verificationStatus === 'verified' && coreFieldsUnchanged;
+
     const updated = await this.prisma.workExperience.update({
       where: { id: experienceId },
       data: {
@@ -650,15 +789,24 @@ export class ProfessionalService {
         startDate: experienceDto.startDate,
         endDate: experienceDto.endDate,
         currentlyWorking: experienceDto.currentlyWorking,
+        jobDescription: experienceDto.jobDescription?.trim() || null,
         responsibilities: experienceDto.responsibilities,
         achievements: experienceDto.achievements,
         paymentMode: experienceDto.paymentMode,
         currency: experienceDto.currency,
         salaryRange: experienceDto.salaryRange as any,
-        verificationContact: experienceDto.verificationContact as any,
-        verificationStatus: 'pending',
-        verifiedAt: null,
-        reviewedBy: null,
+        verificationMethod: keepVerificationState
+          ? experience.verificationMethod
+          : experienceDto.verificationMethod?.trim() || null,
+        supportingMediaUrl: keepVerificationState
+          ? experience.supportingMediaUrl
+          : experienceDto.supportingMediaUrl?.trim() || null,
+        verificationStatus: keepVerificationState ? 'verified' : 'pending',
+        verifiedAt: keepVerificationState ? experience.verifiedAt : null,
+        reviewedBy: keepVerificationState ? experience.reviewedBy : null,
+        workVerificationEmail: keepVerificationState
+          ? experience.workVerificationEmail
+          : experienceDto.workVerificationEmail?.trim() || null,
       },
     });
 
@@ -749,6 +897,9 @@ export class ProfessionalService {
         }))
         .filter((m) => m.name || m.role) ?? [];
 
+    const incomingMethod = dto.verificationMethod?.trim() || null;
+    const selfDecl = this.isVerificationSelfDeclarationMethod(incomingMethod);
+
     const project = await this.prisma.professionalProject.create({
       data: {
         professionalId: profId,
@@ -757,7 +908,10 @@ export class ProfessionalService {
         projectLink: dto.projectLink?.trim(),
         mediaUrl: dto.mediaUrl?.trim(),
         teamMembers: (teamMembers.length ? teamMembers : []) as any,
-        verificationStatus: 'pending',
+        verificationMethod: incomingMethod,
+        verificationStatus: selfDecl ? 'verified' : 'pending',
+        verifiedAt: selfDecl ? new Date() : null,
+        reviewedBy: null,
       },
     });
 
@@ -796,6 +950,39 @@ export class ProfessionalService {
         }))
         .filter((m) => m.name || m.role) ?? [];
 
+    const rawMethod = (dto as { verificationMethod?: string | null }).verificationMethod;
+    const verificationMethodSent = rawMethod !== undefined;
+    const parsedIncomingMethod =
+      rawMethod != null && String(rawMethod).trim() !== '' ? String(rawMethod).trim() : null;
+    const methodToApply = verificationMethodSent
+      ? parsedIncomingMethod
+      : (project.verificationMethod ?? null);
+
+    const coreUnchanged = this.professionalProjectCoreContentEqual(project, dto, teamMembers);
+    const keepVerificationState = project.verificationStatus === 'verified' && coreUnchanged;
+
+    let verificationMethod: string | null;
+    let verificationStatus: (typeof project)['verificationStatus'];
+    let verifiedAt: Date | null;
+    let reviewedBy: string | null;
+
+    if (keepVerificationState) {
+      verificationMethod = project.verificationMethod ?? null;
+      verificationStatus = project.verificationStatus;
+      verifiedAt = project.verifiedAt;
+      reviewedBy = project.reviewedBy;
+    } else if (this.isVerificationSelfDeclarationMethod(methodToApply)) {
+      verificationMethod = methodToApply;
+      verificationStatus = 'verified';
+      verifiedAt = new Date();
+      reviewedBy = null;
+    } else {
+      verificationMethod = methodToApply;
+      verificationStatus = 'pending';
+      verifiedAt = null;
+      reviewedBy = null;
+    }
+
     const updated = await this.prisma.professionalProject.update({
       where: { id: projectId },
       data: {
@@ -804,9 +991,10 @@ export class ProfessionalService {
         projectLink: dto.projectLink?.trim(),
         mediaUrl: dto.mediaUrl?.trim(),
         teamMembers: (teamMembers.length ? teamMembers : []) as any,
-        verificationStatus: 'pending',
-        verifiedAt: null,
-        reviewedBy: null,
+        verificationMethod,
+        verificationStatus,
+        verifiedAt,
+        reviewedBy,
       },
     });
 
@@ -1220,7 +1408,9 @@ export class ProfessionalService {
       updateData.description = updateDto.description;
     }
     if (updateDto.certifications !== undefined) {
-      updateData.certifications = updateDto.certifications as any;
+      updateData.certifications = this.normalizeCertificationsJsonForPersistence(
+        updateDto.certifications,
+      ) as any;
     }
     if (updateDto.familyInfo !== undefined) {
       updateData.familyInfo = updateDto.familyInfo as any;
@@ -2142,6 +2332,232 @@ export class ProfessionalService {
       },
     });
     return { success: true, message: 'Email verified successfully' };
+  }
+
+  async sendEducationStudentEmailVerificationCode(
+    userId: string,
+    educationId: string,
+    dto: { email: string },
+  ) {
+    const education = await this.prisma.education.findUnique({
+      where: { id: educationId },
+      include: { professional: true },
+    });
+    if (!education) {
+      throw new NotFoundException('Education record not found');
+    }
+    if (education.professional.userId !== userId) {
+      throw new ForbiddenException('You do not have permission to verify this education');
+    }
+    if (education.verificationStatus === 'verified') {
+      throw new BadRequestException('This education is already verified');
+    }
+
+    const email = dto.email.trim().toLowerCase();
+    if (!email) {
+      throw new BadRequestException('Email is required');
+    }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 10);
+    const key = `${userId}:${educationId}`;
+    this.educationStudentEmailOtpStore.set(key, { code, expiresAt, email });
+
+    const institution = education.institutionName?.trim() || 'your institution';
+    const html = `<p>Your Taldium education verification code for <strong>${institution}</strong> is: <strong>${code}</strong></p><p>Valid for 10 minutes.</p>`;
+    this.eventEmitter.emit('send_verification_email', {
+      to: email,
+      subject: 'Verify your student email — Taldium',
+      html,
+    });
+
+    await this.prisma.education.update({
+      where: { id: educationId },
+      data: {
+        verificationMethod: 'student_email',
+        studentVerificationEmail: email,
+        verificationStatus: 'pending',
+        verifiedAt: null,
+        reviewedBy: null,
+      },
+    });
+
+    await this.prisma.professional.update({
+      where: { id: education.professionalId },
+      data: { verifiedByAdminAt: null },
+    });
+
+    return {
+      success: true,
+      message: 'Verification code sent to your student email',
+      ...(process.env.NODE_ENV === 'development' ? { code } : {}),
+    };
+  }
+
+  async verifyEducationStudentEmailOtp(
+    userId: string,
+    educationId: string,
+    dto: { email: string; code: string },
+  ) {
+    const education = await this.prisma.education.findUnique({
+      where: { id: educationId },
+      include: { professional: true },
+    });
+    if (!education) {
+      throw new NotFoundException('Education record not found');
+    }
+    if (education.professional.userId !== userId) {
+      throw new ForbiddenException('You do not have permission to verify this education');
+    }
+    if (education.verificationStatus === 'verified') {
+      return { success: true, message: 'Education verified successfully' };
+    }
+
+    const email = dto.email.trim().toLowerCase();
+    const key = `${userId}:${educationId}`;
+    const stored = this.educationStudentEmailOtpStore.get(key);
+    if (!stored) {
+      throw new BadRequestException('No verification code found. Request a new code.');
+    }
+    if (stored.expiresAt < new Date()) {
+      this.educationStudentEmailOtpStore.delete(key);
+      throw new BadRequestException('Code expired. Request a new code.');
+    }
+    if (stored.email !== email) {
+      throw new BadRequestException('Use the same email address you requested a code for.');
+    }
+    if (stored.code !== dto.code.trim()) {
+      throw new BadRequestException('Invalid verification code');
+    }
+    this.educationStudentEmailOtpStore.delete(key);
+
+    const now = new Date();
+    await this.prisma.education.update({
+      where: { id: educationId },
+      data: {
+        verificationMethod: 'student_email',
+        studentVerificationEmail: email,
+        verificationStatus: 'verified',
+        verifiedAt: now,
+        reviewedBy: null,
+      },
+    });
+
+    return { success: true, message: 'Education verified successfully' };
+  }
+
+  async sendExperienceWorkEmailVerificationCode(
+    userId: string,
+    experienceId: string,
+    dto: { email: string },
+  ) {
+    const experience = await this.prisma.workExperience.findUnique({
+      where: { id: experienceId },
+      include: { professional: true },
+    });
+    if (!experience) {
+      throw new NotFoundException('Work experience record not found');
+    }
+    if (experience.professional.userId !== userId) {
+      throw new ForbiddenException('You do not have permission to verify this work experience');
+    }
+    if (experience.verificationStatus === 'verified') {
+      throw new BadRequestException('This work experience is already verified');
+    }
+
+    const email = dto.email.trim().toLowerCase();
+    if (!email) {
+      throw new BadRequestException('Email is required');
+    }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 10);
+    const key = `${userId}:${experienceId}`;
+    this.experienceWorkEmailOtpStore.set(key, { code, expiresAt, email });
+
+    const org = experience.organisationName?.trim() || 'your employer';
+    const html = `<p>Your Taldium work experience verification code for <strong>${org}</strong> is: <strong>${code}</strong></p><p>Valid for 10 minutes.</p>`;
+    this.eventEmitter.emit('send_verification_email', {
+      to: email,
+      subject: 'Verify your work email — Taldium',
+      html,
+    });
+
+    await this.prisma.workExperience.update({
+      where: { id: experienceId },
+      data: {
+        verificationMethod: 'work_email',
+        workVerificationEmail: email,
+        verificationStatus: 'pending',
+        verifiedAt: null,
+        reviewedBy: null,
+      },
+    });
+
+    await this.prisma.professional.update({
+      where: { id: experience.professionalId },
+      data: { verifiedByAdminAt: null },
+    });
+
+    return {
+      success: true,
+      message: 'Verification code sent to your work email',
+      ...(process.env.NODE_ENV === 'development' ? { code } : {}),
+    };
+  }
+
+  async verifyExperienceWorkEmailOtp(
+    userId: string,
+    experienceId: string,
+    dto: { email: string; code: string },
+  ) {
+    const experience = await this.prisma.workExperience.findUnique({
+      where: { id: experienceId },
+      include: { professional: true },
+    });
+    if (!experience) {
+      throw new NotFoundException('Work experience record not found');
+    }
+    if (experience.professional.userId !== userId) {
+      throw new ForbiddenException('You do not have permission to verify this work experience');
+    }
+    if (experience.verificationStatus === 'verified') {
+      return { success: true, message: 'Work experience verified successfully' };
+    }
+
+    const email = dto.email.trim().toLowerCase();
+    const key = `${userId}:${experienceId}`;
+    const stored = this.experienceWorkEmailOtpStore.get(key);
+    if (!stored) {
+      throw new BadRequestException('No verification code found. Request a new code.');
+    }
+    if (stored.expiresAt < new Date()) {
+      this.experienceWorkEmailOtpStore.delete(key);
+      throw new BadRequestException('Code expired. Request a new code.');
+    }
+    if (stored.email !== email) {
+      throw new BadRequestException('Use the same email address you requested a code for.');
+    }
+    if (stored.code !== dto.code.trim()) {
+      throw new BadRequestException('Invalid verification code');
+    }
+    this.experienceWorkEmailOtpStore.delete(key);
+
+    const now = new Date();
+    await this.prisma.workExperience.update({
+      where: { id: experienceId },
+      data: {
+        verificationMethod: 'work_email',
+        workVerificationEmail: email,
+        verificationStatus: 'verified',
+        verifiedAt: now,
+        reviewedBy: null,
+      },
+    });
+
+    return { success: true, message: 'Work experience verified successfully' };
   }
 
   private static readonly PROFILE_EDIT_ALLOWED_FIELDS = new Set([

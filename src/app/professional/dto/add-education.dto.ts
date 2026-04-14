@@ -213,6 +213,14 @@ export class AddEducationDto {
   @IsOptional()
   verificationMethod?: string;
 
+  @ApiProperty({
+    required: false,
+    description: 'Institution email used for student-email verification (read-only from server after verify)',
+  })
+  @IsString()
+  @IsOptional()
+  studentVerificationEmail?: string;
+
   @ApiProperty({ type: [VerificationDocumentDto], required: false })
   @IsArray()
   @IsOptional()

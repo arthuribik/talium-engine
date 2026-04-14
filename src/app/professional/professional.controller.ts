@@ -39,6 +39,8 @@ import { RevokeAccessDto } from './dto/revoke-access.dto';
 import { SendPhoneOtpDto } from './dto/send-phone-otp.dto';
 import { VerifyPhoneOtpDto } from './dto/verify-phone-otp.dto';
 import { VerifyAccountEmailCodeDto } from './dto/verify-account-email-code.dto';
+import { EducationStudentEmailSendOtpDto } from './dto/education-student-email-send-otp.dto';
+import { EducationStudentEmailVerifyOtpDto } from './dto/education-student-email-verify-otp.dto';
 import { SubmitProfessionalProfileEditRequestDto } from './dto/submit-profile-edit-request.dto';
 
 @ApiTags('Professional')
@@ -503,6 +505,74 @@ export class ProfessionalController {
       req.user.userId,
       profId,
       experienceDto,
+    );
+  }
+
+  @Post('education/:educationId/student-email/send-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send OTP to institution email to verify an education record' })
+  @ApiParam({ name: 'educationId', description: 'Education ID' })
+  @ApiResponse({ status: 200, description: 'OTP sent to student email' })
+  async sendEducationStudentEmailOtp(
+    @Request() req,
+    @Param('educationId') educationId: string,
+    @Body() dto: EducationStudentEmailSendOtpDto,
+  ) {
+    return this.professionalService.sendEducationStudentEmailVerificationCode(
+      req.user.userId,
+      educationId,
+      dto,
+    );
+  }
+
+  @Post('education/:educationId/student-email/verify-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify student email OTP and mark education as verified' })
+  @ApiParam({ name: 'educationId', description: 'Education ID' })
+  @ApiResponse({ status: 200, description: 'Education verified' })
+  async verifyEducationStudentEmailOtp(
+    @Request() req,
+    @Param('educationId') educationId: string,
+    @Body() dto: EducationStudentEmailVerifyOtpDto,
+  ) {
+    return this.professionalService.verifyEducationStudentEmailOtp(
+      req.user.userId,
+      educationId,
+      dto,
+    );
+  }
+
+  @Post('experience/:experienceId/work-email/send-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send OTP to company email to verify a work experience record' })
+  @ApiParam({ name: 'experienceId', description: 'Work experience ID' })
+  @ApiResponse({ status: 200, description: 'OTP sent to work email' })
+  async sendExperienceWorkEmailOtp(
+    @Request() req,
+    @Param('experienceId') experienceId: string,
+    @Body() dto: EducationStudentEmailSendOtpDto,
+  ) {
+    return this.professionalService.sendExperienceWorkEmailVerificationCode(
+      req.user.userId,
+      experienceId,
+      dto,
+    );
+  }
+
+  @Post('experience/:experienceId/work-email/verify-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify work email OTP and mark work experience as verified' })
+  @ApiParam({ name: 'experienceId', description: 'Work experience ID' })
+  @ApiResponse({ status: 200, description: 'Work experience verified' })
+  async verifyExperienceWorkEmailOtp(
+    @Request() req,
+    @Param('experienceId') experienceId: string,
+    @Body() dto: EducationStudentEmailVerifyOtpDto,
+  ) {
+    return this.professionalService.verifyExperienceWorkEmailOtp(
+      req.user.userId,
+      experienceId,
+      dto,
     );
   }
 

@@ -335,6 +335,8 @@ model Education {
   country               String
   isDefault             Boolean            @default(false)
   verificationMethod    String?
+  /// Institution email used for student-email OTP verification (when applicable).
+  studentVerificationEmail String?
   verificationStatus    VerificationStatus @default(pending)
   verificationDocuments Json?
   verifiedAt            DateTime?
@@ -359,13 +361,17 @@ model WorkExperience {
   startDate           String
   endDate             String?
   currentlyWorking    Boolean            @default(false)
+  jobDescription      String?            @db.Text
   responsibilities    String[]
   achievements        String[]
   paymentMode         String?
   currency            String?
   salaryRange         Json?
+  verificationMethod  String?
+  /// Company email used for work-email OTP verification (when applicable).
+  workVerificationEmail String?
+  supportingMediaUrl  String?
   verificationStatus  VerificationStatus @default(pending)
-  verificationContact Json?
   verifiedAt          DateTime?
   reviewedBy          String?
   createdAt           DateTime           @default(now())
@@ -384,6 +390,8 @@ model ProfessionalProject {
   projectLink        String?
   mediaUrl           String?
   teamMembers        Json?
+  /// e.g. self_declaration, work_email, portfolio — parity with work/education verification.
+  verificationMethod String?
   verificationStatus VerificationStatus @default(pending)
   verifiedAt         DateTime?
   reviewedBy         String?

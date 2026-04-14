@@ -47,4 +47,12 @@ export class AddProjectDto {
   @ValidateNested({ each: true })
   @Type(() => ProjectTeamMemberDto)
   teamMembers?: ProjectTeamMemberDto[];
+
+  @ApiProperty({
+    required: false,
+    description: 'Verification path, e.g. self_declaration (counts as verified for self-declaration flow)',
+  })
+  @IsString()
+  @IsOptional()
+  verificationMethod?: string;
 }
