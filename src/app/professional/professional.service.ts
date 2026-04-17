@@ -897,8 +897,14 @@ export class ProfessionalService {
         }))
         .filter((m) => m.name || m.role) ?? [];
 
-    const incomingMethod = dto.verificationMethod?.trim() || null;
-    const selfDecl = this.isVerificationSelfDeclarationMethod(incomingMethod);
+    const rawMethod = dto.verificationMethod;
+    const trimmed =
+      typeof rawMethod === 'string'
+        ? rawMethod.trim()
+        : rawMethod != null
+          ? String(rawMethod).trim()
+          : '';
+    const incomingMethod = trimmed.length > 0 ? trimmed : null;
 
     const project = await this.prisma.professionalProject.create({
       data: {
@@ -908,9 +914,14 @@ export class ProfessionalService {
         projectLink: dto.projectLink?.trim(),
         mediaUrl: dto.mediaUrl?.trim(),
         teamMembers: (teamMembers.length ? teamMembers : []) as any,
+        /** Omit on client for new rows; only set after explicit self-declaration flow */
         verificationMethod: incomingMethod,
-        verificationStatus: selfDecl ? 'verified' : 'pending',
-        verifiedAt: selfDecl ? new Date() : null,
+        /**
+         * Self-declaration is provisional (limited verification), not full `verified`.
+         * Progress aggregates still count it via `isProjectSelfDeclaredForVerificationAggregate`.
+         */
+        verificationStatus: 'pending',
+        verifiedAt: null,
         reviewedBy: null,
       },
     });
@@ -973,8 +984,9 @@ export class ProfessionalService {
       reviewedBy = project.reviewedBy;
     } else if (this.isVerificationSelfDeclarationMethod(methodToApply)) {
       verificationMethod = methodToApply;
-      verificationStatus = 'verified';
-      verifiedAt = new Date();
+      /** Same as create: self-declaration stays pending until full evidence/admin verification */
+      verificationStatus = 'pending';
+      verifiedAt = null;
       reviewedBy = null;
     } else {
       verificationMethod = methodToApply;

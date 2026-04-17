@@ -50,7 +50,8 @@ export class AddProjectDto {
 
   @ApiProperty({
     required: false,
-    description: 'Verification path, e.g. self_declaration (counts as verified for self-declaration flow)',
+    description:
+      'Optional. Omit for new projects (stays pending). Send `self_declaration` only after the user confirms self-declaration (counts as verified for that flow).',
   })
   @IsString()
   @IsOptional()
