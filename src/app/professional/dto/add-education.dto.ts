@@ -135,7 +135,10 @@ export class AddEducationDto {
   @IsOptional()
   currency?: string;
 
-  @ApiProperty({ required: false, description: 'e.g. one_time, monthly, annually' })
+  @ApiProperty({
+    required: false,
+    description: 'How cost recurs: one_time | monthly | annually | semester | weekly',
+  })
   @IsString()
   @IsOptional()
   costFrequency?: string;
@@ -151,7 +154,10 @@ export class AddEducationDto {
   @IsOptional()
   loanCurrency?: string;
 
-  @ApiProperty({ required: false })
+  @ApiProperty({
+    required: false,
+    description: 'Loan repayment cadence: one_time | monthly | annually | semester | weekly',
+  })
   @IsString()
   @IsOptional()
   loanRepaymentFrequency?: string;
