@@ -24,6 +24,8 @@ import { InviteAdminDto } from './dto/invite-admin.dto';
 import { CompleteOnboardingDto } from './dto/complete-onboarding.dto';
 import { CreateSuperAdminDto } from './dto/create-super-admin.dto';
 import { AuthService } from '../app/auth/auth.service';
+import { CreateBillingPlanDto } from './dto/create-billing-plan.dto';
+import { UpdateBillingPlanDto } from './dto/update-billing-plan.dto';
 
 @ApiTags('Admin')
 @Controller('admin')
@@ -477,5 +479,31 @@ export class AdminController {
     @Query('entityType') entityType?: 'professional' | 'organisation',
   ) {
     return this.adminService.getSubscriptionPlans(entityType);
+  }
+
+  @Post('billing/plans')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create a subscription billing plan' })
+  @ApiResponse({ status: 201, description: 'Plan created' })
+  async createBillingPlan(
+    @Request() req,
+    @Body() body: CreateBillingPlanDto,
+  ) {
+    return this.adminService.createBillingPlan(body);
+  }
+
+  @Put('billing/plans/:planRecordId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update a subscription billing plan' })
+  @ApiParam({ name: 'planRecordId', description: 'Plan record id (cuid)' })
+  @ApiResponse({ status: 200, description: 'Plan updated' })
+  async updateBillingPlan(
+    @Request() req,
+    @Param('planRecordId') planRecordId: string,
+    @Body() body: UpdateBillingPlanDto,
+  ) {
+    return this.adminService.updateBillingPlan(planRecordId, body);
   }
 }

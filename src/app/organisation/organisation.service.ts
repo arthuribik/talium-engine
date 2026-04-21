@@ -9,7 +9,10 @@ import { PrismaService } from '../../utility/prisma/prisma.service';
 import { OrganisationSetupDto } from './dto/organisation-setup.dto';
 import { VerificationRequestDto } from './dto/verification-request.dto';
 import { UpdateOrganisationProfileDto } from './dto/update-profile.dto';
+import { BillingEntityType } from '@prisma/client';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
+import { InitiateWalletFundDto } from './dto/initiate-wallet-fund.dto';
+import { ensureDefaultBillingPlans } from '../billing/billing-plans.seed';
 import { CreateJobDto } from '../job/dto/create-job.dto';
 import { ResendEntity } from '../../utility/mail';
 
@@ -903,74 +906,48 @@ export class OrganisationService {
   }
 
   async getAvailablePlans() {
-    // Return available subscription plans for organisations
-    return {
-      success: true,
-      data: [
-        {
-          id: 'starter',
-          name: 'Starter Plan',
-          price: 0,
-          description: 'Default plan, no payment, no commitment',
-          features: [
-            'Basic job posting',
-            'Standard support',
-            'Basic analytics',
-            'Up to 5 active job postings',
-          ],
-        },
-        {
-          id: 'standard',
-          name: 'Standard Plan',
-          price: 99,
-          description: 'Extra value and optimized recruitment experience',
-          features: [
-            'Unlimited job postings',
-            'Advanced analytics',
-            'Priority support',
-            'Custom branding',
-            'Candidate filtering',
-            'Application management',
-          ],
-        },
-        {
-          id: 'recruiter',
-          name: 'Recruiter Plan',
-          price: 299,
-          description:
-            'Full suite recruitment, onboarding and offboarding package',
-          features: [
-            'Everything in Standard',
-            'Recruitment suite',
-            'Onboarding tools',
-            'Offboarding management',
-            'Team collaboration',
-            'Advanced reporting',
-            'Dedicated support',
-          ],
-        },
-        {
-          id: 'enterprise',
-          name: 'Enterprise Plan',
-          price: 999,
-          description: 'Suitable for large organisations',
-          features: [
-            'Everything in Recruiter',
-            'Custom integrations',
-            'Dedicated account manager',
-            'SLA guarantee',
-            'On-premise option',
-            'White-label solution',
-            'API access',
-            'Custom workflows',
-          ],
-        },
-      ],
-    };
+    await ensureDefaultBillingPlans(this.prisma);
+    const rows = await this.prisma.billingSubscriptionPlan.findMany({
+      where: { entityType: BillingEntityType.organisation, isActive: true },
+      orderBy: { displayOrder: 'asc' },
+    });
+    const data = rows.map((row) => ({
+      id: row.planSlug,
+      name: row.name,
+      price: Number(row.priceMonthlyUsd),
+      description: row.description,
+      features: Array.isArray(row.features) ? (row.features as string[]) : [],
+      priceAnnualUsd:
+        row.priceAnnualUsd != null ? Number(row.priceAnnualUsd) : null,
+      priceMonthlyNgn: row.priceMonthlyNgn,
+      priceAnnualNgn: row.priceAnnualNgn,
+    }));
+    return { success: true, data };
   }
 
-  /** NGN amount shown on org billing (recruiter matches product sample; others from USD × rate). */
-  private monthlyPlanAmountNgn(plan: string): number {
+  /** NGN amount shown on org billing (from catalog; recruiter NGN default when unset). */
+  private async resolveOrganisationPlanMonthlyNgn(
+    planSlug: string,
+  ): Promise<number> {
+    await ensureDefaultBillingPlans(this.prisma);
+    if (planSlug === 'starter') return 0;
+    const row = await this.prisma.billingSubscriptionPlan.findFirst({
+      where: {
+        entityType: BillingEntityType.organisation,
+        planSlug,
+        isActive: true,
+      },
+    });
+    if (!row) {
+      return this.fallbackMonthlyPlanNgn(planSlug);
+    }
+    if (row.priceMonthlyNgn != null) return row.priceMonthlyNgn;
+    const usd = Number(row.priceMonthlyUsd);
+    if (planSlug === 'recruiter') return 35000;
+    return Math.round(usd * 1550);
+  }
+
+  private fallbackMonthlyPlanNgn(plan: string): number {
     const usdByPlan: Record<string, number> = {
       standard: 99,
       recruiter: 299,
@@ -2438,30 +2415,33 @@ export class OrganisationService {
         subscriptionStartDate = organisation.updatedAt;
       }
 
-      // Calculate renewal date (add 1 month for monthly billing)
-      // In production, this would use the actual billing cycle from the payment
-      const billingCycle = pendingPayment?.billingCycle || 'monthly';
+      // Calculate renewal date from last known billing cycle on pending / validated payment
+      const cycleRaw = String(
+        pendingPayment?.billingCycle ||
+          (addressData as any).lastSubscriptionBillingCycle ||
+          'monthly',
+      ).toLowerCase();
       renewalDate = new Date(subscriptionStartDate);
 
-      if (billingCycle === 'monthly') {
+      if (cycleRaw === 'monthly') {
         renewalDate.setMonth(renewalDate.getMonth() + 1);
-      } else if (billingCycle === 'yearly') {
+      } else if (cycleRaw === 'yearly' || cycleRaw === 'annual') {
         renewalDate.setFullYear(renewalDate.getFullYear() + 1);
       } else {
-        // Default to monthly
         renewalDate.setMonth(renewalDate.getMonth() + 1);
       }
     }
 
-    const monthlyNgn = this.monthlyPlanAmountNgn(subscriptionPlan);
-    const walletTokenBalance = Number(addressData.walletTokenBalance ?? 245);
+    const monthlyNgn =
+      await this.resolveOrganisationPlanMonthlyNgn(subscriptionPlan);
+    const walletTokenBalance = Number(addressData.walletTokenBalance ?? 0);
     const walletApproxNgn = Number(
       addressData.walletApproxNgn ?? Math.round(walletTokenBalance * 35),
     );
     const walletApproxUsd = Number(
-      addressData.walletApproxUsd ?? Math.round(walletApproxNgn / 700) / 100,
+      addressData.walletApproxUsd ?? Math.round(walletTokenBalance * 0.05 * 100) / 100,
     );
-    const savedCardsCount = Number(addressData.savedCardsCount ?? 2);
+    const savedCardsCount = Number(addressData.savedCardsCount ?? 0);
 
     const dashboard = {
       upcomingPayment:
@@ -2539,65 +2519,13 @@ export class OrganisationService {
     const paymentValidation = addressData.paymentValidation;
     const pendingPayment = addressData.pendingPayment;
 
-    const billingHistory: any[] = [];
-
-    // If there's a validated payment, add it to history
-    if (paymentValidation && paymentValidation.validatedAt) {
-      const validatedPayment = pendingPayment || {};
-      const planPricing: { [key: string]: number } = {
-        standard: 99,
-        recruiter: 299,
-        enterprise: 999,
-      };
-      const amount =
-        validatedPayment.amount ||
-        planPricing[validatedPayment.plan || subscriptionPlan] ||
-        0;
-
-      billingHistory.push({
-        id: validatedPayment.reference || `payment-${organisation.id}`,
-        amount,
-        currency: 'USD',
-        plan: validatedPayment.plan || subscriptionPlan,
-        billingCycle: validatedPayment.billingCycle || 'monthly',
-        status: 'success',
-        paymentDate: paymentValidation.validatedAt,
-        validatedBy: paymentValidation.adminName || 'Admin',
-        transactionId: validatedPayment.reference,
-      });
-    }
-
-    // If subscription plan is active and not starter, add current subscription as history entry
-    if (subscriptionPlan !== 'starter' && !paymentValidation) {
-      // This means subscription was set but no validation record exists
-      // We'll still show it as a successful transaction
-      const planPricing: { [key: string]: number } = {
-        standard: 99,
-        recruiter: 299,
-        enterprise: 999,
-      };
-      const amount = planPricing[subscriptionPlan] || 0;
-
-      billingHistory.push({
-        id: `subscription-${organisation.id}`,
-        amount,
-        currency: 'USD',
-        plan: subscriptionPlan,
-        billingCycle: 'monthly',
-        status: 'success',
-        paymentDate: organisation.updatedAt.toISOString(),
-        validatedBy: 'System',
-        transactionId: `sub-${organisation.id}`,
-      });
-    }
-
-    // Sort by payment date (newest first)
-    billingHistory.sort(
-      (a, b) =>
-        new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime(),
+    const ledgerRows = await this.prisma.organisationBillingTransaction.findMany(
+      {
+        where: { organisationId: organisation.id },
+        orderBy: { occurredAt: 'desc' },
+        take: 500,
+      },
     );
-
-    const usdToNgn = (usd: number) => Math.round(Number(usd) * 1550);
 
     type OrgBillingTransactionRow = {
       id: string;
@@ -2610,107 +2538,105 @@ export class OrganisationService {
       date: string;
     };
 
-    const mapLegacyToTransaction = (
-      row: any,
-      index: number,
-    ): OrgBillingTransactionRow => {
-      const usd = Number(row.amount) || 0;
-      const amountNgn =
-        String(row.currency || '').toUpperCase() === 'USD'
-          ? usdToNgn(usd)
-          : Math.round(usd);
-      const ok = String(row.status || '').toLowerCase() === 'success';
+    const mapLedgerRow = (row: (typeof ledgerRows)[0]): OrgBillingTransactionRow => {
+      const st = String(row.status).toLowerCase();
+      const status = st === 'failed' ? 'failed' : st === 'pending' ? 'pending' : 'completed';
       return {
-        id: String(row.transactionId || row.id || `TXN-LEG-${index}`),
-        status: ok ? 'completed' : 'failed',
-        amountNgn,
-        ttkDelta: null,
-        ttkColor: null,
-        type: 'subscription',
-        description: `${String(row.plan || 'Plan')} — ${String(row.billingCycle || 'monthly')} charge`,
-        date:
-          typeof row.paymentDate === 'string'
-            ? row.paymentDate
-            : new Date(row.paymentDate).toISOString(),
-      };
+      id: row.reference || row.id,
+      status,
+      amountNgn: row.amountNgn,
+      ttkDelta: row.ttkDelta ?? null,
+      ttkColor: (row.ttkColor as OrgBillingTransactionRow['ttkColor']) ?? null,
+      type: row.type,
+      description: row.description,
+      date: row.occurredAt.toISOString(),
+    };
     };
 
-    let transactions: OrgBillingTransactionRow[] =
-      billingHistory.map(mapLegacyToTransaction);
+    let transactions: OrgBillingTransactionRow[] = ledgerRows.map(mapLedgerRow);
+
+    const billingHistory: any[] = [];
 
     if (transactions.length === 0) {
-      transactions = [
-        {
-          id: 'TXN-20260401-001',
-          status: 'completed',
-          amountNgn: 35000,
+      if (paymentValidation && paymentValidation.validatedAt) {
+        const validatedPayment = pendingPayment || {};
+        const planPricing: { [key: string]: number } = {
+          standard: 99,
+          recruiter: 299,
+          enterprise: 999,
+        };
+        const amount =
+          validatedPayment.amount ||
+          planPricing[validatedPayment.plan || subscriptionPlan] ||
+          0;
+
+        billingHistory.push({
+          id: validatedPayment.reference || `payment-${organisation.id}`,
+          amount,
+          currency: 'USD',
+          plan: validatedPayment.plan || subscriptionPlan,
+          billingCycle: validatedPayment.billingCycle || 'monthly',
+          status: 'success',
+          paymentDate: paymentValidation.validatedAt,
+          validatedBy: paymentValidation.adminName || 'Admin',
+          transactionId: validatedPayment.reference,
+        });
+      }
+
+      if (subscriptionPlan !== 'starter' && !paymentValidation) {
+        const planPricing: { [key: string]: number } = {
+          standard: 99,
+          recruiter: 299,
+          enterprise: 999,
+        };
+        const amount = planPricing[subscriptionPlan] || 0;
+
+        billingHistory.push({
+          id: `subscription-${organisation.id}`,
+          amount,
+          currency: 'USD',
+          plan: subscriptionPlan,
+          billingCycle: 'monthly',
+          status: 'success',
+          paymentDate: organisation.updatedAt.toISOString(),
+          validatedBy: 'System',
+          transactionId: `sub-${organisation.id}`,
+        });
+      }
+
+      billingHistory.sort(
+        (a, b) =>
+          new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime(),
+      );
+
+      const usdToNgn = (usd: number) => Math.round(Number(usd) * 1550);
+
+      const mapLegacyToTransaction = (
+        row: any,
+        index: number,
+      ): OrgBillingTransactionRow => {
+        const usd = Number(row.amount) || 0;
+        const amountNgn =
+          String(row.currency || '').toUpperCase() === 'USD'
+            ? usdToNgn(usd)
+            : Math.round(usd);
+        const ok = String(row.status || '').toLowerCase() === 'success';
+        return {
+          id: String(row.transactionId || row.id || `TXN-LEG-${index}`),
+          status: ok ? 'completed' : 'failed',
+          amountNgn,
           ttkDelta: null,
           ttkColor: null,
           type: 'subscription',
-          description: 'Recruiter Plan - Monthly Renewal',
-          date: '2026-04-01T12:00:00.000Z',
-        },
-        {
-          id: 'TXN-20260328-014',
-          status: 'completed',
-          amountNgn: 5250,
-          ttkDelta: 150,
-          ttkColor: 'teal',
-          type: 'credit',
-          description: 'Wallet Top-up',
-          date: '2026-03-28T09:15:00.000Z',
-        },
-        {
-          id: 'TXN-20260320-008',
-          status: 'failed',
-          amountNgn: 20000,
-          ttkDelta: null,
-          ttkColor: null,
-          type: 'subscription',
-          description: 'Corporate Plan — payment declined',
-          date: '2026-03-20T11:40:00.000Z',
-        },
-        {
-          id: 'TXN-20260318-031',
-          status: 'completed',
-          amountNgn: 0,
-          ttkDelta: -5,
-          ttkColor: 'red',
-          type: 'debit',
-          description: 'Profile view bundle',
-          date: '2026-03-18T08:05:00.000Z',
-        },
-        {
-          id: 'TXN-20260312-017',
-          status: 'completed',
-          amountNgn: 0,
-          ttkDelta: -10,
-          ttkColor: 'red',
-          type: 'debit',
-          description: 'Verification boost',
-          date: '2026-03-12T16:22:00.000Z',
-        },
-        {
-          id: 'TXN-20260305-003',
-          status: 'completed',
-          amountNgn: 0,
-          ttkDelta: -3,
-          ttkColor: 'inherit',
-          type: 'debit',
-          description: 'Export data package',
-          date: '2026-03-05T13:10:00.000Z',
-        },
-        {
-          id: 'TXN-20260222-041',
-          status: 'completed',
-          amountNgn: 350,
-          ttkDelta: null,
-          ttkColor: null,
-          type: 'addon',
-          description: 'AML Check - Candidate ID #4521',
-          date: '2026-02-22T10:30:00.000Z',
-        },
-      ];
+          description: `${String(row.plan || 'Plan')} — ${String(row.billingCycle || 'monthly')} charge`,
+          date:
+            typeof row.paymentDate === 'string'
+              ? row.paymentDate
+              : new Date(row.paymentDate).toISOString(),
+        };
+      };
+
+      transactions = billingHistory.map(mapLegacyToTransaction);
     }
 
     transactions.sort(
@@ -2726,10 +2652,7 @@ export class OrganisationService {
     };
   }
 
-  /**
-   * Organisation invoices (PDF / hosted links).
-   * Returns representative rows until invoicing is persisted from payments.
-   */
+  /** Invoices issued from validated payments (stored). */
   async getBillingInvoices(userId: string) {
     const organisation = await this.prisma.organisation.findUnique({
       where: { userId },
@@ -2740,50 +2663,20 @@ export class OrganisationService {
       throw new NotFoundException('Organisation not found');
     }
 
-    const invoices: Array<{
-      id: string;
-      issuedAt: string;
-      amountNgn: number;
-      status: string;
-      description: string;
-      downloadUrl?: string;
-    }> = [
-      {
-        id: 'INV-2026-001',
-        issuedAt: '2026-04-01T10:00:00.000Z',
-        amountNgn: 35000,
-        status: 'paid',
-        description: 'Taldium Recruiter Plan - April 2026',
-      },
-      {
-        id: 'INV-2026-002',
-        issuedAt: '2026-03-15T14:30:00.000Z',
-        amountNgn: 20000,
-        status: 'paid',
-        description: 'Taldium Corporate Plan - March 2026',
-      },
-      {
-        id: 'INV-2026-003',
-        issuedAt: '2026-03-02T09:15:00.000Z',
-        amountNgn: 5250,
-        status: 'paid',
-        description: 'Token Purchase - 150 TTK',
-      },
-      {
-        id: 'INV-2026-004',
-        issuedAt: '2026-04-18T11:00:00.000Z',
-        amountNgn: 35000,
-        status: 'pending',
-        description: 'Taldium Recruiter Plan - May 2026 (scheduled)',
-      },
-      {
-        id: 'INV-2026-005',
-        issuedAt: '2026-02-10T16:45:00.000Z',
-        amountNgn: 8750,
-        status: 'paid',
-        description: 'Token Purchase - 250 TTK',
-      },
-    ];
+    const rows = await this.prisma.organisationInvoice.findMany({
+      where: { organisationId: organisation.id },
+      orderBy: { issuedAt: 'desc' },
+      take: 200,
+    });
+
+    const invoices = rows.map((r) => ({
+      id: r.invoiceNumber,
+      issuedAt: r.issuedAt.toISOString(),
+      amountNgn: r.amountNgn,
+      status: r.status,
+      description: r.description,
+      downloadUrl: r.downloadUrl ?? undefined,
+    }));
 
     return {
       success: true,
@@ -2866,26 +2759,35 @@ export class OrganisationService {
       throw new NotFoundException('Organisation not found');
     }
 
-    // Plan pricing
-    const planPricing: { [key: string]: number } = {
-      standard: 99,
-      recruiter: 299,
-      enterprise: 999,
-    };
+    await ensureDefaultBillingPlans(this.prisma);
+    const planRow = await this.prisma.billingSubscriptionPlan.findFirst({
+      where: {
+        entityType: BillingEntityType.organisation,
+        planSlug: paymentDto.plan,
+        isActive: true,
+      },
+    });
+    if (!planRow) {
+      throw new BadRequestException('Unknown or inactive subscription plan');
+    }
 
-    const amount = planPricing[paymentDto.plan] || 0;
     const billingCycle = paymentDto.billingCycle || 'monthly';
+    const cycle = billingCycle.toLowerCase();
+    const isAnnual = cycle === 'yearly' || cycle === 'annual';
+    const amount = isAnnual
+      ? Number(planRow.priceAnnualUsd ?? planRow.priceMonthlyUsd)
+      : Number(planRow.priceMonthlyUsd);
+    const amountNgn = isAnnual
+      ? planRow.priceAnnualNgn ??
+        Math.round(Number(planRow.priceAnnualUsd ?? 0) * 1550)
+      : planRow.priceMonthlyNgn ??
+        Math.round(Number(planRow.priceMonthlyUsd) * 1550);
 
-    // Generate payment reference/ID
     const paymentReference = `TAL-${organisation.id.substring(0, 8).toUpperCase()}-${Date.now()}`;
 
-    // Generate payment link
-    // In production, this would integrate with a payment gateway (Stripe, PayPal, etc.)
-    // For now, we'll generate a mock payment link
     const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5231';
     const paymentLink = `${baseUrl}/payment/process?reference=${paymentReference}&plan=${paymentDto.plan}&amount=${amount}&cycle=${billingCycle}`;
 
-    // Store payment initiation in address JSON (in production, use a Payment model)
     const addressData = (organisation.address as any) || {};
     await this.prisma.organisation.update({
       where: { userId },
@@ -2893,12 +2795,15 @@ export class OrganisationService {
         address: {
           ...addressData,
           pendingPayment: {
+            kind: 'subscription',
             reference: paymentReference,
             plan: paymentDto.plan,
             amount,
+            amountNgn,
             billingCycle,
             initiatedAt: new Date().toISOString(),
             status: 'pending',
+            paymentLink,
           },
         },
       },
@@ -2914,9 +2819,63 @@ export class OrganisationService {
         amount,
         billingCycle,
         currency: 'USD',
+        amountNgn,
         organisationId: organisation.id,
         organisationName: organisation.companyName,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // Link expires in 24 hours
+      },
+    };
+  }
+
+  async initiateWalletFund(userId: string, dto: InitiateWalletFundDto) {
+    const ttkAmount = dto.ttkAmount;
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+
+    const TTK_NGN = 35;
+    const TTK_USD = 0.05;
+    const amountNgn = Math.round(ttkAmount * TTK_NGN);
+    const amountUsd = Math.round(ttkAmount * TTK_USD * 100) / 100;
+    const paymentReference = `TTK-${organisation.id.substring(0, 8).toUpperCase()}-${Date.now()}`;
+    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5231';
+    const paymentLink = `${baseUrl}/payment/process?reference=${encodeURIComponent(paymentReference)}&type=wallet_topup&ttk=${ttkAmount}&amount=${amountUsd}`;
+
+    const addressData = (organisation.address as any) || {};
+    await this.prisma.organisation.update({
+      where: { userId },
+      data: {
+        address: {
+          ...addressData,
+          pendingPayment: {
+            kind: 'wallet_topup',
+            reference: paymentReference,
+            ttkAmount,
+            amount: amountUsd,
+            amountNgn,
+            initiatedAt: new Date().toISOString(),
+            status: 'pending',
+            paymentLink,
+          },
+        },
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Wallet funding initiated',
+      data: {
+        paymentReference,
+        paymentLink,
+        ttkAmount,
+        amountUsd,
+        amountNgn,
+        currency: 'USD',
+        organisationId: organisation.id,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       },
     };
   }

@@ -8,9 +8,13 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
+import { BillingEntityType } from '@prisma/client';
 import { PrismaService } from '../utility/prisma/prisma.service';
 import { InviteAdminDto } from './dto/invite-admin.dto';
 import { CompleteOnboardingDto } from './dto/complete-onboarding.dto';
+import { CreateBillingPlanDto } from './dto/create-billing-plan.dto';
+import { UpdateBillingPlanDto } from './dto/update-billing-plan.dto';
+import { ensureDefaultBillingPlans } from '../app/billing/billing-plans.seed';
 
 @Injectable()
 export class AdminService {
@@ -997,6 +1001,8 @@ export class AdminService {
       // If there's a pending payment, add it as a transaction
       if (pendingPayment) {
         const transactionStatus = pendingPayment.status || 'pending';
+        const kind = pendingPayment.kind || 'subscription';
+        const isWallet = kind === 'wallet_topup';
 
         // Only include if status matches filter
         if (status === 'all' || status === transactionStatus) {
@@ -1006,8 +1012,10 @@ export class AdminService {
             currency: 'USD',
             status:
               transactionStatus === 'completed' ? 'success' : transactionStatus,
-            type: 'subscription',
-            description: `Subscription payment for ${pendingPayment.plan || subscriptionPlan} plan`,
+            type: isWallet ? 'wallet_topup' : 'subscription',
+            description: isWallet
+              ? `Wallet top-up (${pendingPayment.ttkAmount ?? 0} TTK)`
+              : `Subscription payment for ${pendingPayment.plan || subscriptionPlan} plan`,
             entityType: 'organisation',
             entityId: org.id,
             entityName:
@@ -1114,6 +1122,8 @@ export class AdminService {
       // Check if this is the transaction we're looking for
       if (pendingPayment && pendingPayment.reference === transactionId) {
         const transactionStatus = pendingPayment.status || 'pending';
+        const kind = pendingPayment.kind || 'subscription';
+        const isWallet = kind === 'wallet_topup';
 
         return {
           success: true,
@@ -1123,14 +1133,19 @@ export class AdminService {
             currency: 'USD',
             status:
               transactionStatus === 'completed' ? 'success' : transactionStatus,
-            type: 'subscription',
-            description: `Subscription payment for ${pendingPayment.plan || subscriptionPlan} plan`,
+            type: isWallet ? 'wallet_topup' : 'subscription',
+            kind,
+            description: isWallet
+              ? `Wallet top-up (${pendingPayment.ttkAmount ?? 0} TTK)`
+              : `Subscription payment for ${pendingPayment.plan || subscriptionPlan} plan`,
             entityType: 'organisation',
             entityId: org.id,
             entityName:
               org.companyName || `${org.user.firstName} ${org.user.lastName}`,
             plan: pendingPayment.plan || subscriptionPlan,
             billingCycle: pendingPayment.billingCycle || 'monthly',
+            ttkAmount: pendingPayment.ttkAmount,
+            amountNgn: pendingPayment.amountNgn,
             paymentLink: pendingPayment.paymentLink,
             createdAt: pendingPayment.initiatedAt || org.createdAt,
             user: {
@@ -1236,7 +1251,78 @@ export class AdminService {
         throw new NotFoundException('Transaction not found');
       }
 
-      // Update the payment status and add validation data
+      const kind = pendingPayment.kind || 'subscription';
+      const validatedAt = new Date().toISOString();
+
+      if (kind === 'wallet_topup') {
+        const ttk = Number(pendingPayment.ttkAmount) || 0;
+        if (ttk < 1) {
+          throw new BadRequestException('Invalid token amount on pending payment');
+        }
+        const amtNgn =
+          Number(pendingPayment.amountNgn) || Math.round(ttk * 35);
+        const balance = Number(addressData.walletTokenBalance ?? 0);
+        const nextBal = balance + ttk;
+        const nextAddr: Record<string, unknown> = { ...addressData };
+        delete nextAddr.pendingPayment;
+        nextAddr.walletTokenBalance = nextBal;
+        nextAddr.walletApproxNgn = Math.round(nextBal * 35);
+        nextAddr.walletApproxUsd = Math.round(nextBal * 0.05 * 100) / 100;
+        nextAddr.lastWalletTopUp = {
+          adminUserId,
+          adminName,
+          reason,
+          validatedAt,
+          ttkAmount: ttk,
+        };
+
+        await this.prisma.organisation.update({
+          where: { id: entityId },
+          data: { address: nextAddr as any },
+        });
+
+        const invNo = `INV-${Date.now().toString(36).toUpperCase()}`;
+        await this.prisma.organisationBillingTransaction.create({
+          data: {
+            organisationId: entityId,
+            occurredAt: new Date(),
+            status: 'completed',
+            type: 'credit',
+            amountNgn: amtNgn,
+            ttkDelta: ttk,
+            ttkColor: 'teal',
+            description: `Wallet top-up — ${ttk} TTK`,
+            reference: transactionId,
+          },
+        });
+        await this.prisma.organisationInvoice.create({
+          data: {
+            organisationId: entityId,
+            invoiceNumber: invNo,
+            issuedAt: new Date(),
+            amountNgn: amtNgn,
+            status: 'paid',
+            description: `Token purchase — ${ttk} TTK`,
+          },
+        });
+
+        return {
+          success: true,
+          message: 'Wallet top-up validated successfully',
+          data: {
+            transactionId,
+            status: 'success',
+            validation: {
+              adminUserId,
+              adminName,
+              reason,
+              proofOfPayment: proofOfPayment || null,
+              validatedAt,
+            },
+          },
+        };
+      }
+
       await this.prisma.organisation.update({
         where: { id: entityId },
         data: {
@@ -1245,18 +1331,68 @@ export class AdminService {
             pendingPayment: {
               ...pendingPayment,
               status: 'completed',
-              validatedAt: new Date().toISOString(),
+              validatedAt,
             },
             paymentValidation: {
               adminUserId,
               adminName,
               reason,
               proofOfPayment: proofOfPayment || null,
-              validatedAt: new Date().toISOString(),
+              validatedAt,
             },
             subscriptionPlan:
               pendingPayment.plan || addressData.subscriptionPlan,
           },
+        },
+      });
+
+      const planSlug = String(
+        pendingPayment.plan || addressData.subscriptionPlan || 'starter',
+      );
+      const billingCycle = String(pendingPayment.billingCycle || 'monthly');
+      const planRow = await this.prisma.billingSubscriptionPlan.findFirst({
+        where: {
+          entityType: BillingEntityType.organisation,
+          planSlug,
+          isActive: true,
+        },
+      });
+      const cycle = billingCycle.toLowerCase();
+      const isAnnual = cycle === 'yearly' || cycle === 'annual';
+      let amountNgn = 0;
+      if (planRow) {
+        amountNgn =
+          isAnnual && planRow.priceAnnualNgn != null
+            ? planRow.priceAnnualNgn
+            : (planRow.priceMonthlyNgn ??
+              Math.round(Number(planRow.priceMonthlyUsd) * 1550));
+      } else {
+        amountNgn = Math.round(Number(pendingPayment.amount || 0) * 1550);
+      }
+      if (planSlug === 'recruiter' && !isAnnual && !planRow?.priceMonthlyNgn) {
+        amountNgn = 35000;
+      }
+
+      const invNoSub = `INV-${Date.now().toString(36).toUpperCase()}`;
+      await this.prisma.organisationBillingTransaction.create({
+        data: {
+          organisationId: entityId,
+          occurredAt: new Date(),
+          status: 'completed',
+          type: 'subscription',
+          amountNgn,
+          description: `${planSlug} plan — ${billingCycle}`,
+          reference: transactionId,
+        },
+      });
+      await this.prisma.organisationInvoice.create({
+        data: {
+          organisationId: entityId,
+          invoiceNumber: invNoSub,
+          issuedAt: new Date(),
+          amountNgn,
+          status: 'paid',
+          description: `Subscription — ${planSlug} (${billingCycle})`,
         },
       });
 
@@ -1271,7 +1407,7 @@ export class AdminService {
             adminName,
             reason,
             proofOfPayment: proofOfPayment || null,
-            validatedAt: new Date().toISOString(),
+            validatedAt,
           },
         },
       };
@@ -1352,81 +1488,155 @@ export class AdminService {
     };
   }
 
-  async getSubscriptionPlans(entityType?: 'professional' | 'organisation') {
-    const organisationPlans = [
-      {
-        id: 'starter',
-        name: 'Starter Plan',
-        price: 0,
-        description: 'Default plan, no payment, no commitment',
-        entityType: 'organisation',
-      },
-      {
-        id: 'standard',
-        name: 'Standard Plan',
-        price: 99,
-        description: 'Extra value and optimized recruitment experience',
-        entityType: 'organisation',
-      },
-      {
-        id: 'recruiter',
-        name: 'Recruiter Plan',
-        price: 299,
-        description:
-          'Full suite recruitment, onboarding and offboarding package',
-        entityType: 'organisation',
-      },
-      {
-        id: 'enterprise',
-        name: 'Enterprise Plan',
-        price: 999,
-        description: 'Suitable for large organisations',
-        entityType: 'organisation',
-      },
-    ];
+  private mapBillingPlanToAdmin(row: {
+    id: string;
+    planSlug: string;
+    entityType: BillingEntityType;
+    name: string;
+    description: string;
+    priceMonthlyUsd: unknown;
+    priceAnnualUsd: unknown | null;
+    priceMonthlyNgn: number | null;
+    priceAnnualNgn: number | null;
+    features: unknown;
+    displayOrder: number;
+    isActive: boolean;
+  }) {
+    const feats = Array.isArray(row.features)
+      ? (row.features as string[])
+      : [];
+    return {
+      recordId: row.id,
+      id: row.planSlug,
+      name: row.name,
+      description: row.description,
+      price: Number(row.priceMonthlyUsd),
+      priceAnnualUsd:
+        row.priceAnnualUsd != null ? Number(row.priceAnnualUsd) : null,
+      priceMonthlyNgn: row.priceMonthlyNgn,
+      priceAnnualNgn: row.priceAnnualNgn,
+      features: feats,
+      displayOrder: row.displayOrder,
+      isActive: row.isActive,
+      entityType:
+        row.entityType === BillingEntityType.organisation
+          ? 'organisation'
+          : 'professional',
+    };
+  }
 
-    const professionalPlans = [
-      {
-        id: 'express',
-        name: 'Taldium Express',
-        price: 0,
-        description: 'Default access plan for all entities',
-        entityType: 'professional',
-      },
-      {
-        id: 'bloom',
-        name: 'Taldium Bloom',
-        price: 79,
-        description: 'Enhanced features for professionals',
-        entityType: 'professional',
-      },
-      {
-        id: 'prime',
-        name: 'Taldium Prime',
-        price: 149,
-        description: 'Premium features and priority support',
-        entityType: 'professional',
-      },
-    ];
+  async getSubscriptionPlans(entityType?: 'professional' | 'organisation') {
+    await ensureDefaultBillingPlans(this.prisma);
+
+    const listFor = async (et: BillingEntityType) => {
+      const rows = await this.prisma.billingSubscriptionPlan.findMany({
+        where: { entityType: et },
+        orderBy: { displayOrder: 'asc' },
+      });
+      return rows.map((r) => this.mapBillingPlanToAdmin(r));
+    };
 
     if (entityType === 'professional') {
       return {
         success: true,
-        data: professionalPlans,
-      };
-    } else if (entityType === 'organisation') {
-      return {
-        success: true,
-        data: organisationPlans,
+        data: await listFor(BillingEntityType.professional),
       };
     }
+    if (entityType === 'organisation') {
+      return {
+        success: true,
+        data: await listFor(BillingEntityType.organisation),
+      };
+    }
+
+    const [professional, organisation] = await Promise.all([
+      listFor(BillingEntityType.professional),
+      listFor(BillingEntityType.organisation),
+    ]);
 
     return {
       success: true,
       data: {
-        professional: professionalPlans,
-        organisation: organisationPlans,
+        professional,
+        organisation,
       },
+    };
+  }
+
+  async createBillingPlan(dto: CreateBillingPlanDto) {
+    await ensureDefaultBillingPlans(this.prisma);
+    const planSlug = dto.planSlug.trim().toLowerCase().replace(/\s+/g, '-');
+    const existing = await this.prisma.billingSubscriptionPlan.findUnique({
+      where: {
+        entityType_planSlug: {
+          entityType: dto.entityType,
+          planSlug,
+        },
+      },
+    });
+    if (existing) {
+      throw new ConflictException(
+        'A plan with this slug already exists for this entity type',
+      );
+    }
+    const row = await this.prisma.billingSubscriptionPlan.create({
+      data: {
+        planSlug,
+        entityType: dto.entityType,
+        name: dto.name,
+        description: dto.description,
+        priceMonthlyUsd: dto.priceMonthlyUsd,
+        priceAnnualUsd: dto.priceAnnualUsd ?? null,
+        priceMonthlyNgn: dto.priceMonthlyNgn ?? null,
+        priceAnnualNgn: dto.priceAnnualNgn ?? null,
+        features: dto.features ?? [],
+        displayOrder: dto.displayOrder ?? 0,
+        isActive: dto.isActive ?? true,
+      },
+    });
+    return {
+      success: true,
+      message: 'Billing plan created',
+      data: this.mapBillingPlanToAdmin(row),
+    };
+  }
+
+  async updateBillingPlan(planRecordId: string, dto: UpdateBillingPlanDto) {
+    await ensureDefaultBillingPlans(this.prisma);
+    const existing = await this.prisma.billingSubscriptionPlan.findUnique({
+      where: { id: planRecordId },
+    });
+    if (!existing) {
+      throw new NotFoundException('Billing plan not found');
+    }
+    const row = await this.prisma.billingSubscriptionPlan.update({
+      where: { id: planRecordId },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.description !== undefined && { description: dto.description }),
+        ...(dto.priceMonthlyUsd !== undefined && {
+          priceMonthlyUsd: dto.priceMonthlyUsd,
+        }),
+        ...(dto.priceAnnualUsd !== undefined && {
+          priceAnnualUsd: dto.priceAnnualUsd,
+        }),
+        ...(dto.priceMonthlyNgn !== undefined && {
+          priceMonthlyNgn: dto.priceMonthlyNgn,
+        }),
+        ...(dto.priceAnnualNgn !== undefined && {
+          priceAnnualNgn: dto.priceAnnualNgn,
+        }),
+        ...(dto.features !== undefined && { features: dto.features }),
+        ...(dto.displayOrder !== undefined && {
+          displayOrder: dto.displayOrder,
+        }),
+        ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+      },
+    });
+    return {
+      success: true,
+      message: 'Billing plan updated',
+      data: this.mapBillingPlanToAdmin(row),
     };
   }
 

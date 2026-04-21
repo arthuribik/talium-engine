@@ -141,8 +141,74 @@ model Organisation {
   members              OrganisationMember[]
   invitations          OrganisationInvitation[]
   keyEmployees         OrganisationKeyEmployee[]
+  billingTransactions  OrganisationBillingTransaction[]
+  organisationInvoices OrganisationInvoice[]
 
   @@map("organisations")
+}
+
+enum BillingEntityType {
+  professional
+  organisation
+}
+
+model BillingSubscriptionPlan {
+  id              String            @id @default(cuid())
+  planSlug        String
+  entityType      BillingEntityType
+  name            String
+  description     String            @db.Text
+  priceMonthlyUsd Decimal           @default(0) @db.Decimal(12, 2)
+  priceAnnualUsd  Decimal?          @db.Decimal(12, 2)
+  priceMonthlyNgn Int?
+  priceAnnualNgn  Int?
+  features        Json?
+  displayOrder    Int               @default(0)
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@unique([entityType, planSlug])
+  @@index([entityType, isActive])
+  @@map("billing_subscription_plans")
+}
+
+model OrganisationBillingTransaction {
+  id               String   @id @default(cuid())
+  organisationId String
+  occurredAt       DateTime @default(now())
+  status           String
+  type             String
+  amountNgn        Int      @default(0)
+  ttkDelta         Int?
+  ttkColor         String?
+  description      String   @db.Text
+  reference        String?
+  metadata         Json?
+  createdAt        DateTime @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, occurredAt])
+  @@map("organisation_billing_transactions")
+}
+
+model OrganisationInvoice {
+  id               String   @id @default(cuid())
+  organisationId String
+  invoiceNumber    String
+  issuedAt         DateTime @default(now())
+  amountNgn        Int      @default(0)
+  status           String
+  description      String   @db.Text
+  downloadUrl      String?
+  createdAt        DateTime @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, invoiceNumber])
+  @@index([organisationId, issuedAt])
+  @@map("organisation_invoices")
 }
 
 model OrganisationKeyEmployee {

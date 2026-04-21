@@ -15,6 +15,8 @@ import { AddExperienceDto } from './dto/add-experience.dto';
 import { AddProjectDto } from './dto/add-project.dto';
 import { InitiatePaymentDto } from '../organisation/dto/initiate-payment.dto';
 import { canProfessionalApplyToJobs } from '../../common/can-professional-apply-to-jobs';
+import { BillingEntityType } from '@prisma/client';
+import { ensureDefaultBillingPlans } from '../billing/billing-plans.seed';
 
 @Injectable()
 export class ProfessionalService {
@@ -2062,53 +2064,23 @@ export class ProfessionalService {
   }
 
   async getAvailablePlans() {
-    // Return available subscription plans for professionals
-    return {
-      success: true,
-      data: [
-        {
-          id: 'express',
-          name: 'Taldium Express',
-          price: 0,
-          description: 'Default access plan for all entities',
-          features: [
-            'Basic profile access',
-            'Standard verification',
-            'Basic job applications',
-            'Profile visibility',
-          ],
-        },
-        {
-          id: 'bloom',
-          name: 'Taldium Bloom',
-          price: 79,
-          description: 'Enhanced features for professionals',
-          features: [
-            'Everything in Express',
-            'Priority job applications',
-            'Advanced profile features',
-            'Enhanced visibility',
-            'Priority support',
-            'Analytics dashboard',
-          ],
-        },
-        {
-          id: 'prime',
-          name: 'Taldium Prime',
-          price: 149,
-          description: 'Premium features and priority support',
-          features: [
-            'Everything in Bloom',
-            'Premium profile features',
-            'Direct recruiter access',
-            'Advanced analytics',
-            'Dedicated support',
-            'Early access to features',
-            'Custom profile branding',
-          ],
-        },
-      ],
-    };
+    await ensureDefaultBillingPlans(this.prisma);
+    const rows = await this.prisma.billingSubscriptionPlan.findMany({
+      where: { entityType: BillingEntityType.professional, isActive: true },
+      orderBy: { displayOrder: 'asc' },
+    });
+    const data = rows.map((row) => ({
+      id: row.planSlug,
+      name: row.name,
+      price: Number(row.priceMonthlyUsd),
+      description: row.description,
+      features: Array.isArray(row.features) ? (row.features as string[]) : [],
+      priceAnnualUsd:
+        row.priceAnnualUsd != null ? Number(row.priceAnnualUsd) : null,
+      priceMonthlyNgn: row.priceMonthlyNgn,
+      priceAnnualNgn: row.priceAnnualNgn,
+    }));
+    return { success: true, data };
   }
 
   async updateSubscription(userId: string, plan: string) {

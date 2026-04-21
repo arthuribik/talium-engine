@@ -25,6 +25,7 @@ import { VerificationRequestDto } from './dto/verification-request.dto';
 import { UpdateOrganisationProfileDto } from './dto/update-profile.dto';
 import { CreateJobDto } from '../job/dto/create-job.dto';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
+import { InitiateWalletFundDto } from './dto/initiate-wallet-fund.dto';
 import { ScoutSearchDto } from './dto/scout-search.dto';
 import { SendScoutRequestDto } from './dto/send-scout-request.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
@@ -484,6 +485,17 @@ export class OrganisationController {
       req.user.userId,
       initiatePaymentDto,
     );
+  }
+
+  @Post('billing/wallet/initiate')
+  @ApiOperation({ summary: 'Initiate wallet (TTK) top-up payment' })
+  @ApiResponse({ status: 200, description: 'Top-up initiated' })
+  @ApiResponse({ status: 400, description: 'Invalid amount' })
+  async initiateWalletFund(
+    @Request() req,
+    @Body() body: InitiateWalletFundDto,
+  ) {
+    return this.organisationService.initiateWalletFund(req.user.userId, body);
   }
 
   @Get('billing/plans')
