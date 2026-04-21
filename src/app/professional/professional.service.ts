@@ -278,6 +278,25 @@ export class ProfessionalService {
     return cleaned.length ? cleaned : null;
   }
 
+  /** Prisma `Education.startDate` is a non-null string; persist unknown dates as empty string. */
+  private normalizeEducationStoredStartDate(startDate?: string | null): string {
+    return (startDate ?? '').trim();
+  }
+
+  private normalizeEducationStoredEndDate(
+    endDate?: string | null,
+    currentlyAttending?: boolean,
+  ): string | null {
+    if (currentlyAttending) return null;
+    const t = (endDate ?? '').trim();
+    return t ? t : null;
+  }
+
+  private normalizeEducationStoredGrade(grade?: string | null): string | null {
+    const t = (grade ?? '').trim();
+    return t ? t : null;
+  }
+
   async verifyPassword(userId: string, password: string): Promise<{ success: true }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -522,6 +541,13 @@ export class ProfessionalService {
       });
     }
 
+    const storedStart = this.normalizeEducationStoredStartDate(educationDto.startDate);
+    const storedEnd = this.normalizeEducationStoredEndDate(
+      educationDto.endDate,
+      educationDto.currentlyAttending,
+    );
+    const storedGrade = this.normalizeEducationStoredGrade(educationDto.grade);
+
     // Create education record
     const education = await this.prisma.education.create({
       data: {
@@ -533,13 +559,13 @@ export class ProfessionalService {
         institutionIndustry: educationDto.institutionIndustry,
         degreeType: educationDto.degreeType,
         fieldOfStudy: educationDto.fieldOfStudy,
-        startDate: educationDto.startDate,
-        endDate: educationDto.endDate,
+        startDate: storedStart,
+        endDate: storedEnd,
         currentlyAttending: educationDto.currentlyAttending,
-        grade: educationDto.grade,
+        grade: storedGrade,
         costOfEducation: educationDto.costOfEducation,
         currency: educationDto.currency,
-        costFrequency: educationDto.costFrequency,
+        costFrequency: null,
         pendingLoanAmount: educationDto.pendingLoanAmount,
         loanCurrency: educationDto.loanCurrency,
         loanRepaymentFrequency: educationDto.loanRepaymentFrequency,
@@ -667,13 +693,19 @@ export class ProfessionalService {
       );
     }
 
+    const nextStart = this.normalizeEducationStoredStartDate(educationDto.startDate);
+    const nextEnd = this.normalizeEducationStoredEndDate(
+      educationDto.endDate,
+      educationDto.currentlyAttending,
+    );
+
     const coreFieldsUnchanged =
       education.institutionName.trim() === educationDto.institutionName.trim() &&
       education.fieldOfStudy.trim() === educationDto.fieldOfStudy.trim() &&
       (education.degreeType || '').trim() === (educationDto.degreeType || '').trim() &&
       String(education.levelOfEducation) === String(educationDto.levelOfEducation) &&
-      education.startDate === educationDto.startDate &&
-      (education.endDate || '') === (educationDto.endDate || '') &&
+      education.startDate === nextStart &&
+      (education.endDate || '') === (nextEnd || '') &&
       education.country.trim() === educationDto.country.trim();
 
     const keepVerificationState =
@@ -700,13 +732,13 @@ export class ProfessionalService {
         institutionIndustry: educationDto.institutionIndustry,
         degreeType: educationDto.degreeType,
         fieldOfStudy: educationDto.fieldOfStudy,
-        startDate: educationDto.startDate,
-        endDate: educationDto.endDate,
+        startDate: nextStart,
+        endDate: nextEnd,
         currentlyAttending: educationDto.currentlyAttending,
-        grade: educationDto.grade,
+        grade: this.normalizeEducationStoredGrade(educationDto.grade),
         costOfEducation: educationDto.costOfEducation,
         currency: educationDto.currency,
-        costFrequency: educationDto.costFrequency,
+        costFrequency: null,
         pendingLoanAmount: educationDto.pendingLoanAmount,
         loanCurrency: educationDto.loanCurrency,
         loanRepaymentFrequency: educationDto.loanRepaymentFrequency,
@@ -765,6 +797,8 @@ export class ProfessionalService {
       );
     }
 
+    const normalizeWorkLocation = (v: unknown) =>
+      JSON.stringify(v && typeof v === 'object' ? v : {});
     const coreFieldsUnchanged =
       experience.organisationName.trim() === experienceDto.organisationName.trim() &&
       experience.industry.trim() === experienceDto.industry.trim() &&
@@ -774,7 +808,9 @@ export class ProfessionalService {
       experience.currentlyWorking === experienceDto.currentlyWorking &&
       String(experience.employmentType) === String(experienceDto.employmentType) &&
       String(experience.workMode) === String(experienceDto.workMode) &&
-      (experience.jobDescription || '').trim() === (experienceDto.jobDescription || '').trim();
+      (experience.jobDescription || '').trim() === (experienceDto.jobDescription || '').trim() &&
+      normalizeWorkLocation(experience.location) ===
+        normalizeWorkLocation(experienceDto.location);
 
     const keepVerificationState =
       experience.verificationStatus === 'verified' && coreFieldsUnchanged;

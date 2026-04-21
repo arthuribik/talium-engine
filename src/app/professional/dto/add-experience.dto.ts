@@ -27,6 +27,15 @@ class LocationDto {
   @IsString()
   @IsOptional()
   country?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'Free-text where the role is based (e.g. city, country)',
+    example: 'Lagos, Nigeria',
+  })
+  @IsString()
+  @IsOptional()
+  roleLocation?: string;
 }
 
 class SalaryRangeDto {

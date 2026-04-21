@@ -106,10 +106,13 @@ export class AddEducationDto {
   @IsNotEmpty()
   fieldOfStudy: string;
 
-  @ApiProperty()
+  @ApiProperty({
+    required: false,
+    description: 'ISO month start e.g. YYYY-MM-01; omit or empty if unknown',
+  })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  startDate: string;
+  startDate?: string;
 
   @ApiProperty({ required: false })
   @IsString()
@@ -146,14 +149,6 @@ export class AddEducationDto {
   @IsString()
   @IsOptional()
   currency?: string;
-
-  @ApiProperty({
-    required: false,
-    description: 'How cost recurs: one_time | monthly | annually | semester | weekly',
-  })
-  @IsString()
-  @IsOptional()
-  costFrequency?: string;
 
   @ApiProperty({ required: false })
   @IsNumber()
