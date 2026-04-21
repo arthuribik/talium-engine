@@ -262,9 +262,9 @@ export class ProfessionalService {
       startDate?: string;
       endDate?: string;
       currentlyActive?: boolean;
-    }>,
+    }> | null,
   ) {
-    if (!items?.length) return undefined;
+    if (!items?.length) return null;
     const cleaned = items
       .map((p) => ({
         title: (p.title || '').trim(),
@@ -273,7 +273,7 @@ export class ProfessionalService {
         currentlyActive: !!p.currentlyActive,
       }))
       .filter((p) => p.title);
-    return cleaned.length ? cleaned : undefined;
+    return cleaned.length ? cleaned : null;
   }
 
   async verifyPassword(userId: string, password: string): Promise<{ success: true }> {

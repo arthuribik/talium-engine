@@ -1,7 +1,7 @@
 import {
   IsString,
   IsNotEmpty,
-  IsEnum,
+  IsIn,
   IsOptional,
   IsNumber,
   IsBoolean,
@@ -53,6 +53,11 @@ class VerificationDocumentDto {
 export class AddEducationDto {
   @ApiProperty({
     enum: [
+      'degree',
+      'college',
+      'primary_school',
+      'secondary_school',
+      'training_institute',
       'high_school',
       'associate',
       'bachelor',
@@ -61,8 +66,15 @@ export class AddEducationDto {
       'certificate',
       'diploma',
     ],
+    description:
+      'Education level category (new taxonomy) or legacy enum value still stored on older rows',
   })
-  @IsEnum([
+  @IsIn([
+    'degree',
+    'college',
+    'primary_school',
+    'secondary_school',
+    'training_institute',
     'high_school',
     'associate',
     'bachelor',

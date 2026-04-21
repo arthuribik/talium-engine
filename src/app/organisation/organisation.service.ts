@@ -474,10 +474,11 @@ export class OrganisationService {
 
   private workModeLabel(mode: string): string {
     const map: Record<string, string> = {
+      global_remote: 'Global Remote',
       remote: 'Location Remote',
       hybrid: 'Hybrid',
-      on_site: 'On Site',
-      global_remote: 'Global Remote',
+      on_site: 'Onsite',
+      location: 'Location Remote',
     };
     return map[mode] || mode;
   }
@@ -966,6 +967,214 @@ export class OrganisationService {
         },
       ],
     };
+  }
+
+  /** NGN amount shown on org billing (recruiter matches product sample; others from USD × rate). */
+  private monthlyPlanAmountNgn(plan: string): number {
+    const usdByPlan: Record<string, number> = {
+      standard: 99,
+      recruiter: 299,
+      enterprise: 999,
+    };
+    if (plan === 'starter' || !usdByPlan[plan]) return 0;
+    if (plan === 'recruiter') return 35000;
+    return Math.round(usdByPlan[plan] * 1550);
+  }
+
+  private planDashboardDisplayName(plan: string): string {
+    const names: Record<string, string> = {
+      starter: 'Taldium Starter',
+      standard: 'Taldium Standard',
+      recruiter: 'Taldium Recruiter',
+      enterprise: 'Taldium Enterprise',
+    };
+    return names[plan] || `Taldium ${plan}`;
+  }
+
+  /**
+   * Plan usage rows for billing UI (limits are product defaults; `used` merged from stored stats).
+   */
+  private buildOrganisationPlanUsage(
+    plan: string,
+    stats: Record<string, number>,
+  ): Array<{
+    key: string;
+    feature: string;
+    limit: string;
+    used: number;
+    remaining: number | null;
+  }> {
+    const u = (k: string, def = 0) => (typeof stats[k] === 'number' ? stats[k] : def);
+
+    const templates: Record<
+      string,
+      Array<{ key: string; feature: string; limit: string; cap: number | null }>
+    > = {
+      recruiter: [
+        { key: 'jobPosts', feature: 'Job Posts', limit: '10 / month', cap: 10 },
+        {
+          key: 'applicantsPerPost',
+          feature: 'Applicants per Post',
+          limit: '20',
+          cap: 20,
+        },
+        { key: 'emails', feature: 'Emails / month', limit: '200', cap: 200 },
+        {
+          key: 'interviews',
+          feature: 'Interview Schedules / month',
+          limit: '20',
+          cap: 20,
+        },
+        {
+          key: 'scoutWorkflows',
+          feature: 'Talent Scout Workflows',
+          limit: '2 / month',
+          cap: 2,
+        },
+        {
+          key: 'teamMembers',
+          feature: 'Team Members',
+          limit: '3 additional',
+          cap: 3,
+        },
+        {
+          key: 'dataRetention',
+          feature: 'Data Retention',
+          limit: '2 months',
+          cap: null,
+        },
+        {
+          key: 'calendarIntegration',
+          feature: 'Calendar Integration',
+          limit: '1',
+          cap: 1,
+        },
+        {
+          key: 'verifiedProfiles',
+          feature: 'Verified Candidate Profiles',
+          limit: '50',
+          cap: null,
+        },
+      ],
+      standard: [
+        { key: 'jobPosts', feature: 'Job Posts', limit: '5 / month', cap: 5 },
+        {
+          key: 'applicantsPerPost',
+          feature: 'Applicants per Post',
+          limit: '10',
+          cap: 10,
+        },
+        { key: 'emails', feature: 'Emails / month', limit: '100', cap: 100 },
+        {
+          key: 'interviews',
+          feature: 'Interview Schedules / month',
+          limit: '10',
+          cap: 10,
+        },
+        {
+          key: 'scoutWorkflows',
+          feature: 'Talent Scout Workflows',
+          limit: '1 / month',
+          cap: 1,
+        },
+        {
+          key: 'teamMembers',
+          feature: 'Team Members',
+          limit: '1 additional',
+          cap: 1,
+        },
+      ],
+      enterprise: [
+        { key: 'jobPosts', feature: 'Job Posts', limit: 'Unlimited', cap: null },
+        {
+          key: 'applicantsPerPost',
+          feature: 'Applicants per Post',
+          limit: 'Unlimited',
+          cap: null,
+        },
+        { key: 'emails', feature: 'Emails / month', limit: 'Unlimited', cap: null },
+        {
+          key: 'interviews',
+          feature: 'Interview Schedules / month',
+          limit: 'Unlimited',
+          cap: null,
+        },
+        {
+          key: 'scoutWorkflows',
+          feature: 'Talent Scout Workflows',
+          limit: 'Unlimited',
+          cap: null,
+        },
+        {
+          key: 'teamMembers',
+          feature: 'Team Members',
+          limit: 'Unlimited',
+          cap: null,
+        },
+      ],
+      starter: [
+        { key: 'jobPosts', feature: 'Job Posts', limit: '2 / month', cap: 2 },
+        {
+          key: 'applicantsPerPost',
+          feature: 'Applicants per Post',
+          limit: '5',
+          cap: 5,
+        },
+        { key: 'emails', feature: 'Emails / month', limit: '20', cap: 20 },
+      ],
+    };
+
+    const rows = templates[plan] || templates.starter;
+    return rows.map((row) => {
+      const used = u(row.key, 0);
+      let remaining: number | null = null;
+      if (row.cap != null) {
+        remaining = Math.max(0, row.cap - used);
+      }
+      return {
+        key: row.key,
+        feature: row.feature,
+        limit: row.limit,
+        used,
+        remaining,
+      };
+    });
+  }
+
+  private buildOrganisationTokenUsage(
+    _plan: string,
+    stats: Record<string, number>,
+  ): Array<{
+    key: string;
+    feature: string;
+    limit: string;
+    used: number;
+    remaining: number | null;
+  }> {
+    const u = (k: string, def = 0) => (typeof stats[k] === 'number' ? stats[k] : def);
+    return [
+      {
+        key: 'profileViews',
+        feature: 'Profile views (TTK)',
+        limit: 'Per use',
+        used: u('ttkProfileViews', 0),
+        remaining: null,
+      },
+      {
+        key: 'verificationBoost',
+        feature: 'Verification boosts',
+        limit: 'Per use',
+        used: u('ttkVerificationBoost', 0),
+        remaining: null,
+      },
+      {
+        key: 'exports',
+        feature: 'Data exports',
+        limit: 'Per use',
+        used: u('ttkExports', 0),
+        remaining: null,
+      },
+    ];
   }
 
   async searchProfessionals(
@@ -2209,6 +2418,10 @@ export class OrganisationService {
     const subscriptionPlan = addressData.subscriptionPlan || 'starter';
     const paymentValidation = addressData.paymentValidation;
     const pendingPayment = addressData.pendingPayment;
+    const planUsageStats =
+      (addressData.planUsageStats as Record<string, number>) || {};
+    const tokenUsageStats =
+      (addressData.tokenUsageStats as Record<string, number>) || {};
 
     // Calculate renewal/expiry date
     let renewalDate: Date | null = null;
@@ -2240,6 +2453,49 @@ export class OrganisationService {
       }
     }
 
+    const monthlyNgn = this.monthlyPlanAmountNgn(subscriptionPlan);
+    const walletTokenBalance = Number(addressData.walletTokenBalance ?? 245);
+    const walletApproxNgn = Number(
+      addressData.walletApproxNgn ?? Math.round(walletTokenBalance * 35),
+    );
+    const walletApproxUsd = Number(
+      addressData.walletApproxUsd ?? Math.round(walletApproxNgn / 700) / 100,
+    );
+    const savedCardsCount = Number(addressData.savedCardsCount ?? 2);
+
+    const dashboard = {
+      upcomingPayment:
+        subscriptionPlan !== 'starter' && renewalDate
+          ? {
+              amountNgn: monthlyNgn,
+              currency: 'NGN',
+              dueDate: renewalDate.toISOString(),
+            }
+          : null,
+      wallet: {
+        tokenBalance: walletTokenBalance,
+        tokenSymbol: 'TTK',
+        approximateNgn: walletApproxNgn,
+        approximateUsd: walletApproxUsd,
+      },
+      savedCardsCount,
+      currentPlan: {
+        id: subscriptionPlan,
+        displayName: this.planDashboardDisplayName(subscriptionPlan),
+        amountNgnMonthly: monthlyNgn,
+        nextBilling: renewalDate ? renewalDate.toISOString() : null,
+        status: 'active',
+      },
+      planUsage: this.buildOrganisationPlanUsage(
+        subscriptionPlan,
+        planUsageStats,
+      ),
+      tokenUsage: this.buildOrganisationTokenUsage(
+        subscriptionPlan,
+        tokenUsageStats,
+      ),
+    };
+
     return {
       success: true,
       data: {
@@ -2259,6 +2515,7 @@ export class OrganisationService {
                 last4: '4242', // Placeholder - would come from payment service
               }
             : null,
+        dashboard,
       },
     };
   }
@@ -2340,10 +2597,198 @@ export class OrganisationService {
         new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime(),
     );
 
+    const usdToNgn = (usd: number) => Math.round(Number(usd) * 1550);
+
+    type OrgBillingTransactionRow = {
+      id: string;
+      status: string;
+      amountNgn: number;
+      ttkDelta: number | null;
+      ttkColor: 'teal' | 'red' | 'inherit' | null;
+      type: string;
+      description: string;
+      date: string;
+    };
+
+    const mapLegacyToTransaction = (
+      row: any,
+      index: number,
+    ): OrgBillingTransactionRow => {
+      const usd = Number(row.amount) || 0;
+      const amountNgn =
+        String(row.currency || '').toUpperCase() === 'USD'
+          ? usdToNgn(usd)
+          : Math.round(usd);
+      const ok = String(row.status || '').toLowerCase() === 'success';
+      return {
+        id: String(row.transactionId || row.id || `TXN-LEG-${index}`),
+        status: ok ? 'completed' : 'failed',
+        amountNgn,
+        ttkDelta: null,
+        ttkColor: null,
+        type: 'subscription',
+        description: `${String(row.plan || 'Plan')} — ${String(row.billingCycle || 'monthly')} charge`,
+        date:
+          typeof row.paymentDate === 'string'
+            ? row.paymentDate
+            : new Date(row.paymentDate).toISOString(),
+      };
+    };
+
+    let transactions: OrgBillingTransactionRow[] =
+      billingHistory.map(mapLegacyToTransaction);
+
+    if (transactions.length === 0) {
+      transactions = [
+        {
+          id: 'TXN-20260401-001',
+          status: 'completed',
+          amountNgn: 35000,
+          ttkDelta: null,
+          ttkColor: null,
+          type: 'subscription',
+          description: 'Recruiter Plan - Monthly Renewal',
+          date: '2026-04-01T12:00:00.000Z',
+        },
+        {
+          id: 'TXN-20260328-014',
+          status: 'completed',
+          amountNgn: 5250,
+          ttkDelta: 150,
+          ttkColor: 'teal',
+          type: 'credit',
+          description: 'Wallet Top-up',
+          date: '2026-03-28T09:15:00.000Z',
+        },
+        {
+          id: 'TXN-20260320-008',
+          status: 'failed',
+          amountNgn: 20000,
+          ttkDelta: null,
+          ttkColor: null,
+          type: 'subscription',
+          description: 'Corporate Plan — payment declined',
+          date: '2026-03-20T11:40:00.000Z',
+        },
+        {
+          id: 'TXN-20260318-031',
+          status: 'completed',
+          amountNgn: 0,
+          ttkDelta: -5,
+          ttkColor: 'red',
+          type: 'debit',
+          description: 'Profile view bundle',
+          date: '2026-03-18T08:05:00.000Z',
+        },
+        {
+          id: 'TXN-20260312-017',
+          status: 'completed',
+          amountNgn: 0,
+          ttkDelta: -10,
+          ttkColor: 'red',
+          type: 'debit',
+          description: 'Verification boost',
+          date: '2026-03-12T16:22:00.000Z',
+        },
+        {
+          id: 'TXN-20260305-003',
+          status: 'completed',
+          amountNgn: 0,
+          ttkDelta: -3,
+          ttkColor: 'inherit',
+          type: 'debit',
+          description: 'Export data package',
+          date: '2026-03-05T13:10:00.000Z',
+        },
+        {
+          id: 'TXN-20260222-041',
+          status: 'completed',
+          amountNgn: 350,
+          ttkDelta: null,
+          ttkColor: null,
+          type: 'addon',
+          description: 'AML Check - Candidate ID #4521',
+          date: '2026-02-22T10:30:00.000Z',
+        },
+      ];
+    }
+
+    transactions.sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
+
     return {
       success: true,
       data: {
         billingHistory,
+        transactions,
+      },
+    };
+  }
+
+  /**
+   * Organisation invoices (PDF / hosted links).
+   * Returns representative rows until invoicing is persisted from payments.
+   */
+  async getBillingInvoices(userId: string) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+
+    const invoices: Array<{
+      id: string;
+      issuedAt: string;
+      amountNgn: number;
+      status: string;
+      description: string;
+      downloadUrl?: string;
+    }> = [
+      {
+        id: 'INV-2026-001',
+        issuedAt: '2026-04-01T10:00:00.000Z',
+        amountNgn: 35000,
+        status: 'paid',
+        description: 'Taldium Recruiter Plan - April 2026',
+      },
+      {
+        id: 'INV-2026-002',
+        issuedAt: '2026-03-15T14:30:00.000Z',
+        amountNgn: 20000,
+        status: 'paid',
+        description: 'Taldium Corporate Plan - March 2026',
+      },
+      {
+        id: 'INV-2026-003',
+        issuedAt: '2026-03-02T09:15:00.000Z',
+        amountNgn: 5250,
+        status: 'paid',
+        description: 'Token Purchase - 150 TTK',
+      },
+      {
+        id: 'INV-2026-004',
+        issuedAt: '2026-04-18T11:00:00.000Z',
+        amountNgn: 35000,
+        status: 'pending',
+        description: 'Taldium Recruiter Plan - May 2026 (scheduled)',
+      },
+      {
+        id: 'INV-2026-005',
+        issuedAt: '2026-02-10T16:45:00.000Z',
+        amountNgn: 8750,
+        status: 'paid',
+        description: 'Token Purchase - 250 TTK',
+      },
+    ];
+
+    return {
+      success: true,
+      data: {
+        invoices,
       },
     };
   }

@@ -371,7 +371,9 @@ export class AdminService {
       const graduateCertificates = await this.prisma.education
         .count({
           where: {
-            levelOfEducation: { in: ['bachelor', 'master', 'doctorate'] },
+            levelOfEducation: {
+              in: ['bachelor', 'master', 'doctorate', 'degree'],
+            },
           },
         })
         .catch(() => 0);

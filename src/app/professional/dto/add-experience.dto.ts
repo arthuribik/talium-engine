@@ -66,8 +66,12 @@ export class AddExperienceDto {
   @IsNotEmpty()
   employmentType: string;
 
-  @ApiProperty({ enum: ['remote', 'hybrid', 'on_site', 'global_remote'] })
-  @IsEnum(['remote', 'hybrid', 'on_site', 'global_remote'])
+  @ApiProperty({
+    enum: ['global_remote', 'remote', 'hybrid', 'on_site'],
+    description:
+      'Work arrangement: global_remote (Global Remote), remote (Location Remote), hybrid, on_site (Onsite)',
+  })
+  @IsEnum(['global_remote', 'remote', 'hybrid', 'on_site'])
   @IsNotEmpty()
   workMode: string;
 

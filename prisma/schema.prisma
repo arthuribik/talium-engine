@@ -74,16 +74,6 @@ enum IDType {
   voters_card
 }
 
-enum EducationLevel {
-  high_school
-  associate
-  bachelor
-  master
-  doctorate
-  certificate
-  diploma
-}
-
 model User {
   id                String     @id @default(cuid())
   email             String     @unique
@@ -307,7 +297,7 @@ model IdentityVerification {
 model Education {
   id                    String             @id @default(cuid())
   professionalId        String
-  levelOfEducation      EducationLevel
+  levelOfEducation      String
   programLevel          String?
   schoolType            String?
   institutionName       String

@@ -507,6 +507,13 @@ export class OrganisationController {
     return this.organisationService.getBillingHistory(req.user.userId);
   }
 
+  @Get('billing/invoices')
+  @ApiOperation({ summary: 'List organisation invoices (hosted PDFs when available)' })
+  @ApiResponse({ status: 200, description: 'Invoices retrieved successfully' })
+  async getBillingInvoices(@Request() req) {
+    return this.organisationService.getBillingInvoices(req.user.userId);
+  }
+
   @Put(':orgId/setup')
   @ApiOperation({ summary: 'Complete organisation setup' })
   @ApiParam({ name: 'orgId', description: 'Organisation ID' })
