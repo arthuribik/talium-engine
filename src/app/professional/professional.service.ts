@@ -161,19 +161,54 @@ export class ProfessionalService {
       projectLink: string | null;
       mediaUrl: string | null;
       teamMembers: unknown;
+      startMonth: number | null;
+      startYear: number | null;
+      endMonth: number | null;
+      endYear: number | null;
     },
     dto: AddProjectDto,
     normalizedIncomingTeam: Array<{ name: string; role: string }>,
   ): boolean {
     const incomingNorm = this.normalizeProjectTeamMembersForCompare(normalizedIncomingTeam);
+    const n = (v: number | null | undefined) => (v == null ? null : v);
     return (
       project.title.trim() === dto.title.trim() &&
       (project.description || '').trim() === (dto.description || '').trim() &&
       (project.projectLink || '').trim() === (dto.projectLink || '').trim() &&
       (project.mediaUrl || '').trim() === (dto.mediaUrl || '').trim() &&
+      n(project.startMonth) === n(dto.startMonth) &&
+      n(project.startYear) === n(dto.startYear) &&
+      n(project.endMonth) === n(dto.endMonth) &&
+      n(project.endYear) === n(dto.endYear) &&
       JSON.stringify(this.normalizeProjectTeamMembersForCompare(project.teamMembers)) ===
         JSON.stringify(incomingNorm)
     );
+  }
+
+  private assertProjectMonthYearPairs(dto: AddProjectDto) {
+    const pairOk = (m: number | undefined, y: number | undefined, label: string) => {
+      const hasM = m != null;
+      const hasY = y != null;
+      if (hasM !== hasY) {
+        throw new BadRequestException(
+          `${label} requires both month and year, or leave both empty`,
+        );
+      }
+    };
+    pairOk(dto.startMonth, dto.startYear, 'Project start');
+    pairOk(dto.endMonth, dto.endYear, 'Project end');
+    if (
+      dto.startMonth != null &&
+      dto.startYear != null &&
+      dto.endMonth != null &&
+      dto.endYear != null
+    ) {
+      const s = dto.startYear * 12 + dto.startMonth;
+      const e = dto.endYear * 12 + dto.endMonth;
+      if (e < s) {
+        throw new BadRequestException('Project end cannot be before start');
+      }
+    }
   }
 
   private normalizeProfessionalTimezone(value: unknown): string | null {
@@ -944,6 +979,8 @@ export class ProfessionalService {
           : '';
     const incomingMethod = trimmed.length > 0 ? trimmed : null;
 
+    this.assertProjectMonthYearPairs(dto);
+
     const project = await this.prisma.professionalProject.create({
       data: {
         professionalId: profId,
@@ -951,6 +988,10 @@ export class ProfessionalService {
         description: dto.description?.trim(),
         projectLink: dto.projectLink?.trim(),
         mediaUrl: dto.mediaUrl?.trim(),
+        startMonth: dto.startMonth ?? null,
+        startYear: dto.startYear ?? null,
+        endMonth: dto.endMonth ?? null,
+        endYear: dto.endYear ?? null,
         teamMembers: (teamMembers.length ? teamMembers : []) as any,
         /** Omit on client for new rows; only set after explicit self-declaration flow */
         verificationMethod: incomingMethod,
@@ -999,6 +1040,8 @@ export class ProfessionalService {
         }))
         .filter((m) => m.name || m.role) ?? [];
 
+    this.assertProjectMonthYearPairs(dto);
+
     const rawMethod = (dto as { verificationMethod?: string | null }).verificationMethod;
     const verificationMethodSent = rawMethod !== undefined;
     const parsedIncomingMethod =
@@ -1040,6 +1083,10 @@ export class ProfessionalService {
         description: dto.description?.trim(),
         projectLink: dto.projectLink?.trim(),
         mediaUrl: dto.mediaUrl?.trim(),
+        startMonth: dto.startMonth ?? null,
+        startYear: dto.startYear ?? null,
+        endMonth: dto.endMonth ?? null,
+        endYear: dto.endYear ?? null,
         teamMembers: (teamMembers.length ? teamMembers : []) as any,
         verificationMethod,
         verificationStatus,

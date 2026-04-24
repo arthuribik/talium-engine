@@ -445,6 +445,11 @@ model ProfessionalProject {
   description        String?            @db.Text
   projectLink        String?
   mediaUrl           String?
+  /// Inclusive project span (month 1–12, four-digit year). All optional; partial pairs ignored on read.
+  startMonth         Int?
+  startYear          Int?
+  endMonth           Int?
+  endYear            Int?
   teamMembers        Json?
   /// e.g. self_declaration, work_email, portfolio — parity with work/education verification.
   verificationMethod String?
