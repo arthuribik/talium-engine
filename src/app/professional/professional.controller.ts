@@ -342,6 +342,26 @@ export class ProfessionalController {
     return this.professionalService.unsaveJob(req.user.userId, jobId);
   }
 
+  @Get('job-settings')
+  @ApiOperation({ summary: 'Get professional job notification and automation settings' })
+  @ApiResponse({
+    status: 200,
+    description: 'Job settings retrieved successfully',
+  })
+  async getJobSettings(@Request() req) {
+    return this.professionalService.getJobSettings(req.user.userId);
+  }
+
+  @Put('job-settings')
+  @ApiOperation({ summary: 'Update professional job notification and automation settings' })
+  @ApiResponse({
+    status: 200,
+    description: 'Job settings updated successfully',
+  })
+  async updateJobSettings(@Request() req, @Body() settings: any) {
+    return this.professionalService.updateJobSettings(req.user.userId, settings);
+  }
+
   @Get('dashboard/stats')
   @ApiOperation({ summary: 'Get dashboard analytics for professional' })
   @ApiResponse({

@@ -317,6 +317,7 @@ model Professional {
   professionalProjects ProfessionalProject[]
   jobApplications      JobApplication[]
   savedJobs            SavedJob[]
+  jobSettings          ProfessionalJobSettings?
   profileEditRequests  ProfessionalProfileEditRequest[]
 
   @@map("professionals")
@@ -524,4 +525,21 @@ model SavedJob {
 
   @@unique([professionalId, jobId])
   @@map("saved_jobs")
+}
+
+model ProfessionalJobSettings {
+  id              String   @id @default(cuid())
+  professionalId  String   @unique
+  jobTitles       String[] @default([])
+  workMode        String?
+  location        String?
+  employmentType  String?
+  allowRecruiters Boolean  @default(true)
+  automationFlows Json     @default("[]")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+
+  @@map("professional_job_settings")
 }

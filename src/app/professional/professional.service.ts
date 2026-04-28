@@ -1958,6 +1958,102 @@ export class ProfessionalService {
     };
   }
 
+  private normalizeJobSettingsPayload(settings: any) {
+    const jobTitles = Array.isArray(settings?.jobTitles)
+      ? settings.jobTitles
+          .map((title) => String(title || '').trim())
+          .filter(Boolean)
+      : String(settings?.jobTitles || '')
+          .split(',')
+          .map((title) => title.trim())
+          .filter(Boolean);
+
+    const automationFlows = Array.isArray(settings?.automationFlows)
+      ? settings.automationFlows.map((flow, index) => ({
+          id: String(flow?.id || `flow-${index + 1}`),
+          role: String(flow?.role || '').trim(),
+          workMode: String(flow?.workMode || '').trim(),
+          employmentType: String(flow?.employmentType || '').trim(),
+          payRange: String(flow?.payRange || '').trim(),
+          organisations: String(flow?.organisations || '').trim(),
+          location: String(flow?.location || '').trim(),
+        }))
+      : [];
+
+    return {
+      jobTitles,
+      workMode: String(settings?.workMode || '').trim() || null,
+      location: String(settings?.location || '').trim() || null,
+      employmentType: String(settings?.employmentType || '').trim() || null,
+      allowRecruiters:
+        settings?.allowRecruiters === undefined
+          ? true
+          : Boolean(settings.allowRecruiters),
+      automationFlows,
+    };
+  }
+
+  async getJobSettings(userId: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+      include: { jobSettings: true },
+    });
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    const settings =
+      professional.jobSettings ||
+      (await this.prisma.professionalJobSettings.create({
+        data: { professionalId: professional.id },
+      }));
+
+    return {
+      success: true,
+      data: {
+        jobTitles: settings.jobTitles,
+        workMode: settings.workMode || '',
+        location: settings.location || '',
+        employmentType: settings.employmentType || '',
+        allowRecruiters: settings.allowRecruiters,
+        automationFlows: Array.isArray(settings.automationFlows)
+          ? settings.automationFlows
+          : [],
+      },
+    };
+  }
+
+  async updateJobSettings(userId: string, settings: any) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { userId },
+    });
+    if (!professional) {
+      throw new NotFoundException('Professional not found');
+    }
+
+    const payload = this.normalizeJobSettingsPayload(settings);
+    const saved = await this.prisma.professionalJobSettings.upsert({
+      where: { professionalId: professional.id },
+      create: { professionalId: professional.id, ...payload },
+      update: payload,
+    });
+
+    return {
+      success: true,
+      message: 'Job settings updated successfully',
+      data: {
+        jobTitles: saved.jobTitles,
+        workMode: saved.workMode || '',
+        location: saved.location || '',
+        employmentType: saved.employmentType || '',
+        allowRecruiters: saved.allowRecruiters,
+        automationFlows: Array.isArray(saved.automationFlows)
+          ? saved.automationFlows
+          : [],
+      },
+    };
+  }
+
   async getDashboardStats(userId: string) {
     const professional = await this.prisma.professional.findUnique({
       where: { userId },
