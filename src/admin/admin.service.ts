@@ -959,6 +959,7 @@ export class AdminService {
     page: number = 1,
     limit: number = 20,
     status: string = 'all',
+    type: string = 'all',
   ) {
     const skip = (page - 1) * limit;
 
@@ -991,6 +992,57 @@ export class AdminService {
     });
 
     const allTransactions: any[] = [];
+    const statusMatches = (transactionStatus: string) =>
+      status === 'all' ||
+      status === transactionStatus ||
+      (status === 'success' && transactionStatus === 'completed') ||
+      (status === 'completed' && transactionStatus === 'success') ||
+      (status === 'failed' && transactionStatus === 'declined');
+    const typeMatches = (transactionType: string) =>
+      type === 'all' || type === transactionType;
+
+    const ledgerRows =
+      await this.prisma.organisationBillingTransaction.findMany({
+        include: {
+          organisation: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  email: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+    for (const row of ledgerRows) {
+      if (!statusMatches(row.status) || !typeMatches(row.type)) continue;
+      allTransactions.push({
+        id: row.reference || row.id,
+        amount: row.amountNgn,
+        amountNgn: row.amountNgn,
+        currency: 'NGN',
+        status: row.status === 'completed' ? 'success' : row.status,
+        type: row.type,
+        description: row.description,
+        entityType: 'organisation',
+        entityId: row.organisationId,
+        entityName:
+          row.organisation.companyName ||
+          `${row.organisation.user.firstName} ${row.organisation.user.lastName}`,
+        createdAt: row.occurredAt,
+        reference: row.reference,
+        user: {
+          email: row.organisation.user.email,
+          firstName: row.organisation.user.firstName,
+          lastName: row.organisation.user.lastName,
+        },
+      });
+    }
 
     // Extract transactions from organisations
     for (const org of organisations) {
@@ -998,18 +1050,23 @@ export class AdminService {
       const subscriptionPlan = addressData.subscriptionPlan || 'starter';
       const pendingPayment = addressData.pendingPayment;
 
-      // If there's a pending payment, add it as a transaction
-      if (pendingPayment) {
+      // If there's an unresolved pending/declined payment, add it as a transaction
+      if (pendingPayment && pendingPayment.status !== 'completed') {
         const transactionStatus = pendingPayment.status || 'pending';
         const kind = pendingPayment.kind || 'subscription';
         const isWallet = kind === 'wallet_topup';
 
         // Only include if status matches filter
-        if (status === 'all' || status === transactionStatus) {
+        if (statusMatches(transactionStatus) && typeMatches(isWallet ? 'wallet_topup' : 'subscription')) {
           allTransactions.push({
             id: pendingPayment.reference || `org-${org.id}-${Date.now()}`,
-            amount: pendingPayment.amount || 0,
-            currency: 'USD',
+            amount:
+              pendingPayment.amountNgn ??
+              Math.round(Number(pendingPayment.amount || 0) * 1550),
+            amountNgn:
+              pendingPayment.amountNgn ??
+              Math.round(Number(pendingPayment.amount || 0) * 1550),
+            currency: 'NGN',
             status:
               transactionStatus === 'completed' ? 'success' : transactionStatus,
             type: isWallet ? 'wallet_topup' : 'subscription',
@@ -1036,7 +1093,7 @@ export class AdminService {
       if (subscriptionPlan !== 'starter' && !pendingPayment) {
         const transactionStatus = 'success';
 
-        if (status === 'all' || status === transactionStatus) {
+        if (statusMatches(transactionStatus) && typeMatches('subscription')) {
           // Get plan pricing
           const planPricing: { [key: string]: number } = {
             standard: 99,
@@ -1098,6 +1155,64 @@ export class AdminService {
   }
 
   async getTransaction(transactionId: string) {
+    const ledgerRow =
+      await this.prisma.organisationBillingTransaction.findFirst({
+        where: {
+          OR: [{ id: transactionId }, { reference: transactionId }],
+        },
+        include: {
+          organisation: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  email: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+    if (ledgerRow) {
+      const meta = (ledgerRow.metadata as any) || null;
+      return {
+        success: true,
+        data: {
+          id: ledgerRow.reference || ledgerRow.id,
+          amount: ledgerRow.amountNgn,
+          amountNgn: ledgerRow.amountNgn,
+          currency: 'NGN',
+          status:
+            ledgerRow.status === 'completed' ? 'success' : ledgerRow.status,
+          type: ledgerRow.type,
+          description: ledgerRow.description,
+          entityType: 'organisation',
+          entityId: ledgerRow.organisationId,
+          entityName:
+            ledgerRow.organisation.companyName ||
+            `${ledgerRow.organisation.user.firstName} ${ledgerRow.organisation.user.lastName}`,
+          createdAt: ledgerRow.occurredAt,
+          user: {
+            email: ledgerRow.organisation.user.email,
+            firstName: ledgerRow.organisation.user.firstName,
+            lastName: ledgerRow.organisation.user.lastName,
+          },
+          validation: meta
+            ? {
+                adminName: meta.adminName || 'Admin',
+                reason: meta.reason || '',
+                proofOfPayment: meta.proofOfPayment || null,
+                validatedAt: meta.validatedAt || meta.declinedAt || ledgerRow.occurredAt,
+                outcome: ledgerRow.status === 'failed' ? 'declined' : 'validated',
+              }
+            : null,
+        },
+      };
+    }
+
     // Fetch all organisations to find the transaction
     const organisations = await this.prisma.organisation.findMany({
       include: {
@@ -1129,8 +1244,13 @@ export class AdminService {
           success: true,
           data: {
             id: transactionId,
-            amount: pendingPayment.amount || 0,
-            currency: 'USD',
+            amount:
+              pendingPayment.amountNgn ??
+              Math.round(Number(pendingPayment.amount || 0) * 1550),
+            amountNgn:
+              pendingPayment.amountNgn ??
+              Math.round(Number(pendingPayment.amount || 0) * 1550),
+            currency: 'NGN',
             status:
               transactionStatus === 'completed' ? 'success' : transactionStatus,
             type: isWallet ? 'wallet_topup' : 'subscription',
@@ -1145,7 +1265,6 @@ export class AdminService {
             plan: pendingPayment.plan || subscriptionPlan,
             billingCycle: pendingPayment.billingCycle || 'monthly',
             ttkAmount: pendingPayment.ttkAmount,
-            amountNgn: pendingPayment.amountNgn,
             paymentLink: pendingPayment.paymentLink,
             createdAt: pendingPayment.initiatedAt || org.createdAt,
             user: {
@@ -1153,7 +1272,14 @@ export class AdminService {
               firstName: org.user.firstName,
               lastName: org.user.lastName,
             },
-            validation: validationData || null,
+            validation: pendingPayment.declinedAt
+              ? {
+                  adminName: pendingPayment.declinedBy || 'Admin',
+                  reason: pendingPayment.declineReason || 'Payment declined',
+                  validatedAt: pendingPayment.declinedAt,
+                  outcome: 'declined',
+                }
+              : validationData || null,
           },
         };
       }
@@ -1293,6 +1419,13 @@ export class AdminService {
             ttkColor: 'teal',
             description: `Wallet top-up — ${ttk} TTK`,
             reference: transactionId,
+            metadata: {
+              adminUserId,
+              adminName,
+              reason,
+              proofOfPayment: proofOfPayment || null,
+              validatedAt,
+            },
           },
         });
         await this.prisma.organisationInvoice.create({
@@ -1383,6 +1516,13 @@ export class AdminService {
           amountNgn,
           description: `${planSlug} plan — ${billingCycle}`,
           reference: transactionId,
+          metadata: {
+            adminUserId,
+            adminName,
+            reason,
+            proofOfPayment: proofOfPayment || null,
+            validatedAt,
+          },
         },
       });
       await this.prisma.organisationInvoice.create({
@@ -1414,6 +1554,108 @@ export class AdminService {
     }
 
     throw new BadRequestException('Unsupported entity type');
+  }
+
+  async declinePayment(
+    adminUserId: string,
+    transactionId: string,
+    reason: string,
+  ) {
+    if (!reason?.trim()) {
+      throw new BadRequestException('Decline reason is required');
+    }
+
+    const adminUser = await this.prisma.user.findUnique({
+      where: { id: adminUserId },
+      select: {
+        firstName: true,
+        lastName: true,
+      },
+    });
+
+    const adminName = adminUser
+      ? `${adminUser.firstName || ''} ${adminUser.lastName || ''}`.trim() ||
+        'Admin'
+      : 'Admin';
+
+    const transaction = await this.getTransaction(transactionId);
+    if (!transaction.data) {
+      throw new NotFoundException('Transaction not found');
+    }
+    if (transaction.data.status !== 'pending') {
+      throw new BadRequestException('Only pending transactions can be declined');
+    }
+
+    if (transaction.data.entityType !== 'organisation') {
+      throw new BadRequestException('Unsupported entity type');
+    }
+
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { id: transaction.data.entityId },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+
+    const addressData = (organisation.address as any) || {};
+    const pendingPayment = addressData.pendingPayment;
+    if (!pendingPayment || pendingPayment.reference !== transactionId) {
+      throw new NotFoundException('Transaction not found');
+    }
+
+    const declinedAt = new Date().toISOString();
+    await this.prisma.organisation.update({
+      where: { id: transaction.data.entityId },
+      data: {
+        address: {
+          ...addressData,
+          pendingPayment: {
+            ...pendingPayment,
+            status: 'declined',
+            declinedAt,
+            declinedBy: adminName,
+            declineReason: reason.trim(),
+          },
+        },
+      },
+    });
+
+    await this.prisma.organisationBillingTransaction.create({
+      data: {
+        organisationId: transaction.data.entityId,
+        occurredAt: new Date(),
+        status: 'failed',
+        type: transaction.data.type || 'payment',
+        amountNgn:
+          Number(transaction.data.amountNgn) ||
+          Math.round(Number(transaction.data.amount || 0) * 1550),
+        ttkDelta: null,
+        ttkColor: null,
+        description: `${transaction.data.description || 'Payment'} — declined`,
+        reference: transactionId,
+        metadata: {
+          adminUserId,
+          adminName,
+          reason: reason.trim(),
+          declinedAt,
+        },
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Payment declined successfully',
+      data: {
+        transactionId,
+        status: 'declined',
+        validation: {
+          adminUserId,
+          adminName,
+          reason: reason.trim(),
+          declinedAt,
+        },
+      },
+    };
   }
 
   async createJob(

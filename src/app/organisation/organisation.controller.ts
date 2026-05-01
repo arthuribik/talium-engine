@@ -388,6 +388,18 @@ export class OrganisationController {
     });
   }
 
+  @Post('team/invitations')
+  @ApiOperation({ summary: 'Invite a team member' })
+  @ApiResponse({ status: 200, description: 'Invitation sent successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid input or already member/invited' })
+  @ApiResponse({ status: 404, description: 'Organisation not found' })
+  async createTeamInvitation(@Request() req, @Body() body: InviteMemberDto) {
+    return this.organisationService.inviteMember(req.user.userId, {
+      email: body.email,
+      role: body.role,
+    });
+  }
+
   @Put('team/members/:memberId/role')
   @ApiOperation({ summary: 'Update a member role' })
   @ApiParam({ name: 'memberId', description: 'Organisation member ID' })
@@ -496,6 +508,20 @@ export class OrganisationController {
     @Body() body: InitiateWalletFundDto,
   ) {
     return this.organisationService.initiateWalletFund(req.user.userId, body);
+  }
+
+  @Post('billing/payment/:reference/confirm')
+  @ApiOperation({ summary: 'Confirm bank transfer payment has been made' })
+  @ApiResponse({ status: 200, description: 'Payment submitted for verification' })
+  @ApiResponse({ status: 404, description: 'Pending payment not found' })
+  async confirmBankTransferPayment(
+    @Request() req,
+    @Param('reference') reference: string,
+  ) {
+    return this.organisationService.confirmBankTransferPayment(
+      req.user.userId,
+      reference,
+    );
   }
 
   @Get('billing/plans')

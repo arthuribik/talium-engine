@@ -182,7 +182,13 @@ export class AdminController {
     name: 'status',
     required: false,
     type: String,
-    description: 'Filter by status: all, success, pending, failed',
+    description: 'Filter by status: all, success, completed, pending, failed, declined',
+  })
+  @ApiQuery({
+    name: 'type',
+    required: false,
+    type: String,
+    description: 'Filter by type: all, subscription, wallet_topup, credit, debit, addon',
   })
   @ApiResponse({
     status: 200,
@@ -193,11 +199,13 @@ export class AdminController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('status') status?: string,
+    @Query('type') type?: string,
   ) {
     return this.adminService.getAllTransactions(
       page ? parseInt(page) : 1,
       limit ? parseInt(limit) : 20,
       status || 'all',
+      type || 'all',
     );
   }
 
@@ -236,6 +244,26 @@ export class AdminController {
       transactionId,
       body.reason,
       body.proofOfPayment,
+    );
+  }
+
+  @Put('transactions/:transactionId/decline')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Decline a pending payment' })
+  @ApiParam({ name: 'transactionId', description: 'Transaction ID' })
+  @ApiResponse({ status: 200, description: 'Payment declined successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid request' })
+  @ApiResponse({ status: 404, description: 'Transaction not found' })
+  async declinePayment(
+    @Request() req,
+    @Param('transactionId') transactionId: string,
+    @Body() body: { reason: string },
+  ) {
+    return this.adminService.declinePayment(
+      req.user.userId,
+      transactionId,
+      body.reason,
     );
   }
 

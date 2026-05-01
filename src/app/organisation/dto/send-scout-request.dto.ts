@@ -1,5 +1,6 @@
-import { IsString, IsOptional, IsNotEmpty } from 'class-validator';
+import { IsString, IsOptional, IsNotEmpty, IsIn } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { DIRECT_SCOUT_EMPLOYMENT_TYPES } from './scout-search.dto';
 
 export class SendScoutRequestDto {
   @ApiProperty({ description: 'Role / job title', example: 'Senior Software Engineer' })
@@ -7,10 +8,15 @@ export class SendScoutRequestDto {
   @IsNotEmpty()
   jobTitle: string;
 
-  @ApiProperty({ description: 'Employment type', example: 'full_time' })
+  @ApiProperty({
+    description: 'Employment type',
+    enum: DIRECT_SCOUT_EMPLOYMENT_TYPES,
+    example: 'full_time',
+  })
   @IsString()
+  @IsIn(DIRECT_SCOUT_EMPLOYMENT_TYPES)
   @IsNotEmpty()
-  employmentType: string;
+  employmentType: (typeof DIRECT_SCOUT_EMPLOYMENT_TYPES)[number];
 
   @ApiProperty({ description: 'Work mode', example: 'hybrid' })
   @IsString()

@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   BadRequestException,
   NotFoundException,
+  ServiceUnavailableException,
   Inject,
 } from '@nestjs/common';
 import { PrismaService } from '../../utility/prisma/prisma.service';
@@ -492,6 +493,8 @@ export class OrganisationService {
       part_time: 'Part Time',
       contract: 'Contract',
       internship: 'Internship',
+      volunteering: 'Volunteering',
+      consultancy: 'Consultancy',
     };
     return map[type] || type;
   }
@@ -1131,6 +1134,20 @@ export class OrganisationService {
     const u = (k: string, def = 0) => (typeof stats[k] === 'number' ? stats[k] : def);
     return [
       {
+        key: 'tokensPurchased',
+        feature: 'Tokens purchased',
+        limit: 'Wallet balance',
+        used: u('ttkTokensPurchased', 0),
+        remaining: null,
+      },
+      {
+        key: 'tokensSpent',
+        feature: 'Tokens spent',
+        limit: 'Per use',
+        used: u('ttkTotalDebits', 0),
+        remaining: null,
+      },
+      {
         key: 'profileViews',
         feature: 'Profile views (TTK)',
         limit: 'Per use',
@@ -1152,6 +1169,122 @@ export class OrganisationService {
         remaining: null,
       },
     ];
+  }
+
+  private currentMonthRange() {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return { start, end };
+  }
+
+  private async buildOrganisationUsageStats(
+    organisationId: string,
+    storedPlanStats: Record<string, number>,
+    storedTokenStats: Record<string, number>,
+  ) {
+    const { start, end } = this.currentMonthRange();
+    const monthFilter = { gte: start, lt: end };
+
+    const [
+      jobPosts,
+      jobsWithApplications,
+      teamMembers,
+      teamInvitations,
+      directScoutApplications,
+      billingTransactions,
+    ] = await Promise.all([
+      this.prisma.job.count({
+        where: {
+          organisationId,
+          createdAt: monthFilter,
+        },
+      }),
+      this.prisma.job.findMany({
+        where: { organisationId },
+        select: {
+          _count: {
+            select: { applications: true },
+          },
+        },
+      }),
+      this.prisma.organisationMember.count({
+        where: { organisationId },
+      }),
+      this.prisma.organisationInvitation.count({
+        where: {
+          organisationId,
+          createdAt: monthFilter,
+        },
+      }),
+      this.prisma.jobApplication.count({
+        where: {
+          createdAt: monthFilter,
+          job: { organisationId },
+          applicationData: {
+            path: ['isDirectScout'],
+            equals: true,
+          },
+        },
+      }),
+      this.prisma.organisationBillingTransaction.findMany({
+        where: {
+          organisationId,
+          occurredAt: monthFilter,
+        },
+        select: {
+          type: true,
+          ttkDelta: true,
+          metadata: true,
+        },
+      }),
+    ]);
+
+    const applicantsPerPost = jobsWithApplications.reduce(
+      (max, job) => Math.max(max, job._count.applications),
+      0,
+    );
+
+    const ledgerTokenDebits = billingTransactions
+      .filter((row) => Number(row.ttkDelta) < 0)
+      .reduce((sum, row) => sum + Math.abs(Number(row.ttkDelta) || 0), 0);
+    const ledgerTokenCredits = billingTransactions
+      .filter((row) => Number(row.ttkDelta) > 0)
+      .reduce((sum, row) => sum + Math.abs(Number(row.ttkDelta) || 0), 0);
+
+    const tokenStats = { ...storedTokenStats };
+    for (const row of billingTransactions) {
+      const metadata = (row.metadata as any) || {};
+      const usageKey = metadata.usageKey || metadata.tokenUsageKey;
+      if (usageKey && Number(row.ttkDelta) < 0) {
+        tokenStats[usageKey] =
+          (tokenStats[usageKey] || 0) + Math.abs(Number(row.ttkDelta) || 0);
+      }
+    }
+    tokenStats.ttkTotalDebits =
+      (tokenStats.ttkTotalDebits || 0) + ledgerTokenDebits;
+    tokenStats.ttkTokensPurchased =
+      (tokenStats.ttkTokensPurchased || 0) + ledgerTokenCredits;
+
+    return {
+      planUsageStats: {
+        ...storedPlanStats,
+        jobPosts,
+        applicantsPerPost,
+        emails:
+          (storedPlanStats.emails || 0) +
+          teamInvitations +
+          directScoutApplications,
+        interviews: storedPlanStats.interviews || 0,
+        scoutWorkflows:
+          storedPlanStats.scoutWorkflows || directScoutApplications,
+        teamMembers,
+        dataRetention: storedPlanStats.dataRetention || 0,
+        calendarIntegration: storedPlanStats.calendarIntegration || 0,
+        verifiedProfiles: storedPlanStats.verifiedProfiles || 0,
+      },
+      tokenUsageStats: tokenStats,
+    };
   }
 
   async searchProfessionals(
@@ -1737,7 +1870,7 @@ export class OrganisationService {
     let text = jobTitle
       ? `You have been headhunted by ${orgIntro} for the position of ${jobTitle}.`
       : message || 'We would like to connect with you.';
-    if (employmentType) text += `\n\nEmployment Type: ${employmentType}`;
+    if (employmentType) text += `\n\nEmployment Type: ${this.employmentTypeLabel(employmentType)}`;
     if (workMode) text += `\nWork Mode: ${workMode}`;
     if (location) text += `\nLocation: ${location}`;
     if (description) text += `\n\nJob Description:\n${description}`;
@@ -1963,15 +2096,23 @@ export class OrganisationService {
   }
 
   async inviteMember(userId: string, dto: { email: string; role: string }) {
+    const email = dto.email.trim().toLowerCase();
+    const allowedRoles = ['org_admin', 'org_recruiter', 'org_member'];
+    if (!allowedRoles.includes(dto.role)) {
+      throw new BadRequestException('Invalid team role');
+    }
+    if (!this.mailService.isConfigured()) {
+      throw new ServiceUnavailableException(
+        'Email service is not configured. Set RESEND_API_KEY to send team invitations.',
+      );
+    }
+
     const organisation = await this.prisma.organisation.findUnique({
       where: { userId },
     });
     if (!organisation) throw new NotFoundException('Organisation not found');
-    if (dto.role === 'org_owner') {
-      throw new BadRequestException('Cannot invite as owner');
-    }
     const existingUser = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase() },
+      where: { email },
     });
     if (existingUser) {
       const alreadyMember = await this.prisma.organisationMember.findUnique({
@@ -1988,44 +2129,59 @@ export class OrganisationService {
     }
     const existingInvite = await this.prisma.organisationInvitation.findUnique({
       where: {
-        organisationId_email: { organisationId: organisation.id, email: dto.email.toLowerCase() },
+        organisationId_email: { organisationId: organisation.id, email },
       },
     });
     if (existingInvite) {
-      throw new BadRequestException('An invitation has already been sent to this email');
+      if (existingInvite.expiresAt > new Date()) {
+        throw new BadRequestException('An invitation has already been sent to this email');
+      }
+      await this.prisma.organisationInvitation.delete({
+        where: { id: existingInvite.id },
+      });
     }
     const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    await this.prisma.organisationInvitation.create({
+    const invitation = await this.prisma.organisationInvitation.create({
       data: {
         organisationId: organisation.id,
-        email: dto.email.toLowerCase(),
+        email,
         role: dto.role as any,
         token,
         expiresAt,
       },
     });
     try {
-      const inviteLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/register?invite=${token}`;
-      await this.mailService.send(
+      const inviteLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/join?invite=${token}`;
+      const result = await this.mailService.send(
         {
-          to: dto.email,
-          subject: `Invitation to join ${organisation.companyName} on Taldium`,
+          to: email,
+          subject: `You're invited to join ${organisation.companyName} on Taldium`,
         },
         `<div style="font-family: Arial, sans-serif; max-width: 600px;">
           <h2>You've been invited to join ${organisation.companyName}</h2>
+          <p>You have been invited as ${dto.role.replace('org_', '').replace('_', ' ')}.</p>
           <p>Click the link below to accept the invitation and join the team.</p>
-          <p><a href="${inviteLink}" style="color: #2563eb;">Accept invitation</a></p>
+          <p><a href="${inviteLink}" style="display:inline-block;background:#2563eb;color:#ffffff;padding:12px 18px;border-radius:8px;text-decoration:none;">Accept invitation</a></p>
+          <p>If the button does not work, copy and paste this URL into your browser:</p>
+          <p style="word-break: break-all; color: #475569;">${inviteLink}</p>
           <p>This link expires in 7 days.</p>
         </div>`,
       );
+      if (result?.error) {
+        throw result.error;
+      }
     } catch (e) {
       console.error('Failed to send invite email:', e);
+      await this.prisma.organisationInvitation.delete({
+        where: { id: invitation.id },
+      });
+      throw new ServiceUnavailableException('Could not send invitation email. Please try again.');
     }
     return {
       success: true,
       message: 'Invitation sent successfully',
-      data: { email: dto.email, role: dto.role },
+      data: { email, role: dto.role, expiresAt },
     };
   }
 
@@ -2399,6 +2555,11 @@ export class OrganisationService {
       (addressData.planUsageStats as Record<string, number>) || {};
     const tokenUsageStats =
       (addressData.tokenUsageStats as Record<string, number>) || {};
+    const actualUsageStats = await this.buildOrganisationUsageStats(
+      organisation.id,
+      planUsageStats,
+      tokenUsageStats,
+    );
 
     // Calculate renewal/expiry date
     let renewalDate: Date | null = null;
@@ -2468,11 +2629,11 @@ export class OrganisationService {
       },
       planUsage: this.buildOrganisationPlanUsage(
         subscriptionPlan,
-        planUsageStats,
+        actualUsageStats.planUsageStats,
       ),
       tokenUsage: this.buildOrganisationTokenUsage(
         subscriptionPlan,
-        tokenUsageStats,
+        actualUsageStats.tokenUsageStats,
       ),
     };
 
@@ -2703,13 +2864,23 @@ export class OrganisationService {
       throw new NotFoundException('Organisation not found');
     }
 
+    const addressData = (organisation.address as any) || {};
+    const currentPlan = addressData.subscriptionPlan || 'starter';
+    const currentIndex = validPlans.indexOf(currentPlan);
+    const nextIndex = validPlans.indexOf(plan);
+    if (currentPlan !== 'starter' && nextIndex < currentIndex) {
+      throw new BadRequestException(
+        'Active paid subscriptions can only be upgraded to a higher plan',
+      );
+    }
+
     // Update subscription plan in address JSON field
     // Note: In production, add subscriptionPlan: String? field to Organisation model
     await this.prisma.organisation.update({
       where: { userId },
       data: {
         address: {
-          ...((organisation.address as any) || {}),
+          ...addressData,
           subscriptionPlan: plan,
         },
       },
@@ -2759,6 +2930,16 @@ export class OrganisationService {
       throw new NotFoundException('Organisation not found');
     }
 
+    const addressData = (organisation.address as any) || {};
+    const currentPlan = addressData.subscriptionPlan || 'starter';
+    const currentIndex = validPlans.indexOf(currentPlan);
+    const nextIndex = validPlans.indexOf(paymentDto.plan);
+    if (currentPlan !== 'starter' && nextIndex <= currentIndex) {
+      throw new BadRequestException(
+        'Active paid subscriptions can only be upgraded to a higher plan',
+      );
+    }
+
     await ensureDefaultBillingPlans(this.prisma);
     const planRow = await this.prisma.billingSubscriptionPlan.findFirst({
       where: {
@@ -2788,7 +2969,6 @@ export class OrganisationService {
     const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5231';
     const paymentLink = `${baseUrl}/payment/process?reference=${paymentReference}&plan=${paymentDto.plan}&amount=${amount}&cycle=${billingCycle}`;
 
-    const addressData = (organisation.address as any) || {};
     await this.prisma.organisation.update({
       where: { userId },
       data: {
@@ -2804,6 +2984,7 @@ export class OrganisationService {
             initiatedAt: new Date().toISOString(),
             status: 'pending',
             paymentLink,
+            paymentMethod: 'bank_transfer',
           },
         },
       },
@@ -2814,7 +2995,8 @@ export class OrganisationService {
       message: 'Payment initiated successfully',
       data: {
         paymentReference,
-        paymentLink,
+        paymentLink: null,
+        bankDetails: this.getBankTransferDetails(),
         plan: paymentDto.plan,
         amount,
         billingCycle,
@@ -2859,6 +3041,7 @@ export class OrganisationService {
             initiatedAt: new Date().toISOString(),
             status: 'pending',
             paymentLink,
+            paymentMethod: 'bank_transfer',
           },
         },
       },
@@ -2869,7 +3052,8 @@ export class OrganisationService {
       message: 'Wallet funding initiated',
       data: {
         paymentReference,
-        paymentLink,
+        paymentLink: null,
+        bankDetails: this.getBankTransferDetails(),
         ttkAmount,
         amountUsd,
         amountNgn,
@@ -2877,6 +3061,58 @@ export class OrganisationService {
         organisationId: organisation.id,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       },
+    };
+  }
+
+  async confirmBankTransferPayment(userId: string, reference: string) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+
+    const addressData = (organisation.address as any) || {};
+    const pendingPayment = addressData.pendingPayment;
+    if (!pendingPayment || pendingPayment.reference !== reference) {
+      throw new NotFoundException('Pending payment not found');
+    }
+    if (pendingPayment.status && pendingPayment.status !== 'pending') {
+      throw new BadRequestException('Only pending payments can be confirmed');
+    }
+
+    const submittedAt = new Date().toISOString();
+    await this.prisma.organisation.update({
+      where: { userId },
+      data: {
+        address: {
+          ...addressData,
+          pendingPayment: {
+            ...pendingPayment,
+            status: 'pending',
+            paymentMethod: 'bank_transfer',
+            submittedAt,
+          },
+        },
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Payment submitted. It will be verified within 24 hours.',
+      data: {
+        paymentReference: reference,
+        status: 'pending',
+        submittedAt,
+      },
+    };
+  }
+
+  private getBankTransferDetails() {
+    return {
+      bank: 'First Bank',
+      accountNo: '3041698890',
+      accountName: 'Taldium Ltd',
     };
   }
 

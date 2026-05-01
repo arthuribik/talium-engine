@@ -459,6 +459,9 @@ export class AuthService {
     const resetToken = this.generateToken();
     const resetTokenExpiry = new Date();
     resetTokenExpiry.setHours(resetTokenExpiry.getHours() + 1);
+    const frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
+    const resetUrl = `${frontendUrl.replace(/\/$/, '')}/login?token=${encodeURIComponent(resetToken)}`;
 
     await this.prisma.user.update({
       where: { id: user.id },
@@ -470,9 +473,13 @@ export class AuthService {
 
     const html = `
       <h2>Hello ${user.firstName}!</h2>
-      <p>We got a request to reset your account password. Please verify your email by entering this OTP (One Time Password).:</p>
+      <p>We got a request to reset your account password.</p>
+      <p><a href="${resetUrl}">Reset your password</a></p>
+      <p>If the button does not work, open this URL in your browser:</p>
+      <p>${resetUrl}</p>
+      <p>You can also enter this reset code on the login page:</p>
       <p><strong>${resetToken}</strong></p>
-      <p>This OTP will expire in 1 hours.</p>
+      <p>This reset link will expire in 1 hour.</p>
       <p>If you did not request a password reset, please ignore this email.</p>
     `;
 

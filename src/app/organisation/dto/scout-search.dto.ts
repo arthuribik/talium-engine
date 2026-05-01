@@ -1,6 +1,14 @@
 import { IsString, IsOptional, IsNumber, IsArray, IsIn } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
+export const DIRECT_SCOUT_EMPLOYMENT_TYPES = [
+  'full_time',
+  'contract',
+  'internship',
+  'volunteering',
+  'consultancy',
+] as const;
+
 export class ScoutSearchDto {
   @ApiProperty({ required: false, description: 'Job title / role to scout for' })
   @IsString()
@@ -28,10 +36,15 @@ export class ScoutSearchDto {
   @IsOptional()
   workMode?: string;
 
-  @ApiProperty({ required: false, description: 'Employment type (full_time, part_time, contract, internship)' })
+  @ApiProperty({
+    required: false,
+    enum: DIRECT_SCOUT_EMPLOYMENT_TYPES,
+    description: 'Employment type for direct scout',
+  })
   @IsString()
+  @IsIn(DIRECT_SCOUT_EMPLOYMENT_TYPES)
   @IsOptional()
-  employmentType?: string;
+  employmentType?: (typeof DIRECT_SCOUT_EMPLOYMENT_TYPES)[number];
 
   @ApiProperty({ required: false })
   @IsString()

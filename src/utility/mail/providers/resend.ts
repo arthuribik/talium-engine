@@ -31,6 +31,10 @@ export class ResendEntity implements OnModuleInit {
     }
   }
 
+  isConfigured() {
+    return Boolean(this.client);
+  }
+
   async send(data: any, template: string) {
     if (!this.client) {
       console.warn('Resend client is not initialized. Email not sent. Set RESEND_API_KEY to enable email functionality.');
