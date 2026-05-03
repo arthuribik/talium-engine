@@ -1171,10 +1171,11 @@ export class OrganisationService {
     ];
   }
 
-  private currentMonthRange() {
+  private usageMonthRange(period?: string) {
     const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const offset = period === 'last_month' ? -1 : 0;
+    const start = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + offset + 1, 1);
     return { start, end };
   }
 
@@ -1182,8 +1183,9 @@ export class OrganisationService {
     organisationId: string,
     storedPlanStats: Record<string, number>,
     storedTokenStats: Record<string, number>,
+    period?: string,
   ) {
-    const { start, end } = this.currentMonthRange();
+    const { start, end } = this.usageMonthRange(period);
     const monthFilter = { gte: start, lt: end };
 
     const [
@@ -1201,7 +1203,7 @@ export class OrganisationService {
         },
       }),
       this.prisma.job.findMany({
-        where: { organisationId },
+        where: { organisationId, createdAt: monthFilter },
         select: {
           _count: {
             select: { applications: true },
@@ -1252,7 +1254,7 @@ export class OrganisationService {
       .filter((row) => Number(row.ttkDelta) > 0)
       .reduce((sum, row) => sum + Math.abs(Number(row.ttkDelta) || 0), 0);
 
-    const tokenStats = { ...storedTokenStats };
+    const tokenStats = period === 'last_month' ? {} : { ...storedTokenStats };
     for (const row of billingTransactions) {
       const metadata = (row.metadata as any) || {};
       const usageKey = metadata.usageKey || metadata.tokenUsageKey;
@@ -1268,7 +1270,7 @@ export class OrganisationService {
 
     return {
       planUsageStats: {
-        ...storedPlanStats,
+        ...(period === 'last_month' ? {} : storedPlanStats),
         jobPosts,
         applicantsPerPost,
         emails:
@@ -2530,7 +2532,7 @@ export class OrganisationService {
     };
   }
 
-  async getBilling(userId: string) {
+  async getBilling(userId: string, period?: string) {
     const organisation = await this.prisma.organisation.findUnique({
       where: { userId },
       select: {
@@ -2559,6 +2561,7 @@ export class OrganisationService {
       organisation.id,
       planUsageStats,
       tokenUsageStats,
+      period,
     );
 
     // Calculate renewal/expiry date

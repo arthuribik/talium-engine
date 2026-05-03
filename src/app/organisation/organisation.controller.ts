@@ -467,8 +467,8 @@ export class OrganisationController {
     status: 200,
     description: 'Billing information retrieved successfully',
   })
-  async getBilling(@Request() req) {
-    return this.organisationService.getBilling(req.user.userId);
+  async getBilling(@Request() req, @Query('period') period?: string) {
+    return this.organisationService.getBilling(req.user.userId, period);
   }
 
   @Put('billing/subscription')
