@@ -27,7 +27,9 @@ export class ResendEntity implements OnModuleInit {
       this.client = new Resend(apiKey);
       console.log('Resend client initialized');
     } else {
-      console.warn('RESEND_API_KEY is not set. Email functionality will be disabled.');
+      console.warn(
+        'RESEND_API_KEY is not set. Email functionality will be disabled.',
+      );
     }
   }
 
@@ -37,7 +39,9 @@ export class ResendEntity implements OnModuleInit {
 
   async send(data: any, template: string) {
     if (!this.client) {
-      console.warn('Resend client is not initialized. Email not sent. Set RESEND_API_KEY to enable email functionality.');
+      console.warn(
+        'Resend client is not initialized. Email not sent. Set RESEND_API_KEY to enable email functionality.',
+      );
       return { data: { id: 'mock-id' }, error: null };
     }
 
@@ -45,6 +49,7 @@ export class ResendEntity implements OnModuleInit {
 
     try {
       const result = await this.client.emails.send(params);
+      console.log('RS outbound mail result:', result);
       console.log('Resend send result:', result?.data?.id);
       return result;
     } catch (error) {

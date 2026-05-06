@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-import { RegisterDto } from './dto/register.dto';
+import { RegisterDto, SendVerificationCodeDto } from './dto/register.dto';
 import { CreateBusinessDto } from './dto/create-business.dto';
 import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
@@ -118,7 +118,7 @@ export class AuthController {
     status: 200,
     description: 'Verification code sent successfully',
   })
-  async sendVerificationCode(@Body() body: { email: string }) {
+  async sendVerificationCode(@Body() body: SendVerificationCodeDto) {
     return this.authService.sendVerificationCode(body.email);
   }
 
@@ -160,8 +160,14 @@ export class AuthController {
     description:
       'Complete the registration process by setting the password for an existing registration in progress.',
   })
-  @ApiResponse({ status: 200, description: 'Registration finalized successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid input or registration already finalized' })
+  @ApiResponse({
+    status: 200,
+    description: 'Registration finalized successfully',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid input or registration already finalized',
+  })
   @ApiResponse({ status: 404, description: 'Registration not found' })
   async finalizeRegistration(@Body() finalizeDto: FinalizeRegistrationDto) {
     return this.authService.finalizeRegistration(finalizeDto);

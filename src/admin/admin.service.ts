@@ -15,6 +15,8 @@ import { CompleteOnboardingDto } from './dto/complete-onboarding.dto';
 import { CreateBillingPlanDto } from './dto/create-billing-plan.dto';
 import { UpdateBillingPlanDto } from './dto/update-billing-plan.dto';
 import { ensureDefaultBillingPlans } from '../app/billing/billing-plans.seed';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { AuthServiceEvents } from '../app/auth/auth.service';
 
 @Injectable()
 export class AdminService {
@@ -22,6 +24,7 @@ export class AdminService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   async inviteAdmin(userId: string, inviteAdminDto: InviteAdminDto) {
@@ -704,7 +707,7 @@ export class AdminService {
 
   async getAllOrganisations(page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;
-    
+
     // Filter out pending registrations (temp emails or "Pending Registration" company name)
     const whereClause: any = {
       AND: [
@@ -727,7 +730,7 @@ export class AdminService {
         },
       ],
     };
-    
+
     const [organisations, total] = await Promise.all([
       this.prisma.organisation.findMany({
         where: whereClause,
@@ -759,16 +762,23 @@ export class AdminService {
       // Parse description - can be JSON or plain text
       let descriptionText = '';
       let categoryData: any = {};
-      
+
       if (org.description) {
         try {
-          if (typeof org.description === 'string' && org.description.trim().startsWith('{')) {
+          if (
+            typeof org.description === 'string' &&
+            org.description.trim().startsWith('{')
+          ) {
             // It's JSON, parse it
             const parsed = JSON.parse(org.description);
             // Extract text description
             descriptionText = parsed.textDescription || '';
             // Extract category data
-            if (parsed.category || parsed.schoolType || parsed.religiousOrgType) {
+            if (
+              parsed.category ||
+              parsed.schoolType ||
+              parsed.religiousOrgType
+            ) {
               categoryData = {
                 category: parsed.category || null,
                 schoolType: parsed.schoolType || null,
@@ -789,7 +799,9 @@ export class AdminService {
       }
 
       // Count published jobs
-      const publishedJobsCount = (org as any).jobs?.filter((job: any) => job.status === 'published').length || 0;
+      const publishedJobsCount =
+        (org as any).jobs?.filter((job: any) => job.status === 'published')
+          .length || 0;
 
       return {
         ...org,
@@ -1057,7 +1069,10 @@ export class AdminService {
         const isWallet = kind === 'wallet_topup';
 
         // Only include if status matches filter
-        if (statusMatches(transactionStatus) && typeMatches(isWallet ? 'wallet_topup' : 'subscription')) {
+        if (
+          statusMatches(transactionStatus) &&
+          typeMatches(isWallet ? 'wallet_topup' : 'subscription')
+        ) {
           allTransactions.push({
             id: pendingPayment.reference || `org-${org.id}-${Date.now()}`,
             amount:
@@ -1205,8 +1220,10 @@ export class AdminService {
                 adminName: meta.adminName || 'Admin',
                 reason: meta.reason || '',
                 proofOfPayment: meta.proofOfPayment || null,
-                validatedAt: meta.validatedAt || meta.declinedAt || ledgerRow.occurredAt,
-                outcome: ledgerRow.status === 'failed' ? 'declined' : 'validated',
+                validatedAt:
+                  meta.validatedAt || meta.declinedAt || ledgerRow.occurredAt,
+                outcome:
+                  ledgerRow.status === 'failed' ? 'declined' : 'validated',
               }
             : null,
         },
@@ -1383,10 +1400,11 @@ export class AdminService {
       if (kind === 'wallet_topup') {
         const ttk = Number(pendingPayment.ttkAmount) || 0;
         if (ttk < 1) {
-          throw new BadRequestException('Invalid token amount on pending payment');
+          throw new BadRequestException(
+            'Invalid token amount on pending payment',
+          );
         }
-        const amtNgn =
-          Number(pendingPayment.amountNgn) || Math.round(ttk * 35);
+        const amtNgn = Number(pendingPayment.amountNgn) || Math.round(ttk * 35);
         const balance = Number(addressData.walletTokenBalance ?? 0);
         const nextBal = balance + ttk;
         const nextAddr: Record<string, unknown> = { ...addressData };
@@ -1583,7 +1601,9 @@ export class AdminService {
       throw new NotFoundException('Transaction not found');
     }
     if (transaction.data.status !== 'pending') {
-      throw new BadRequestException('Only pending transactions can be declined');
+      throw new BadRequestException(
+        'Only pending transactions can be declined',
+      );
     }
 
     if (transaction.data.entityType !== 'organisation') {
@@ -1701,7 +1721,9 @@ export class AdminService {
         experienceYears: createJobDto.experienceYears,
         jobLevel: createJobDto.jobLevel ?? null,
         pay: createJobDto.pay as any,
-        startDate: createJobDto.startDate ? new Date(createJobDto.startDate) : null,
+        startDate: createJobDto.startDate
+          ? new Date(createJobDto.startDate)
+          : null,
         endDate: createJobDto.endDate ? new Date(createJobDto.endDate) : null,
         closingDate: createJobDto.closingDate
           ? new Date(createJobDto.closingDate)
@@ -1744,9 +1766,7 @@ export class AdminService {
     displayOrder: number;
     isActive: boolean;
   }) {
-    const feats = Array.isArray(row.features)
-      ? (row.features as string[])
-      : [];
+    const feats = Array.isArray(row.features) ? (row.features as string[]) : [];
     return {
       recordId: row.id,
       id: row.planSlug,
@@ -1926,6 +1946,160 @@ export class AdminService {
       data: { status: 'ACTIVE' },
     });
 
+    // Send verification email
+    const html = `
+          <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td align="center">
+            <table width="600" cellpadding="0" cellspacing="0" border="0">
+     
+              <!-- Greeting -->
+              <tr>
+                <td style="padding-bottom: 4px;">
+                  <h2>Hi ${user.firstName},</h2>
+                </td>
+              </tr>
+     
+              <!-- Intro text -->
+              <tr>
+                <td style="padding-bottom: 24px;">
+                  <p>Your Taldium profile has been fully verified and activated. You now have access to the complete Taldium network — a trusted space where professionals and organisations interact with confidence.</p>
+                </td>
+              </tr>
+     
+               <!-- Verified Banner -->
+              <tr>
+                <td style="padding-bottom: 24px;">
+                  <table width="100%" cellpadding="16" cellspacing="0" border="1" bordercolor="#c3e6cb">
+                    <tr>
+                      <td>
+                        ✅ <strong>Profile Active on Taldium Network</strong><br />
+                        Identity · Location · Work · Education — all verified
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+    
+              <!-- What You Can Do Now Label -->
+              <tr>
+                <td style="padding-bottom: 12px;">
+                  <p><small>WHAT YOU CAN DO NOW</small></p>
+                </td>
+              </tr>
+    
+              <!-- Feature Grid Row 1 -->
+              <tr>
+                <td style="padding-bottom: 12px;">
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td width="48%" valign="top">
+                        <table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                          <tr>
+                            <td>
+                              🧳 <strong>Apply for Jobs</strong><br />
+                              Discover and apply to roles at verified organisations
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                      <td width="4%"></td>
+                      <td width="48%" valign="top">
+                        <table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                          <tr>
+                            <td>
+                              🏢 <strong>Connect with Orgs</strong><br />
+                              Interact directly with verified organisations
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+    
+              <!-- Feature Grid Row 2 -->
+              <tr>
+                <td style="padding-bottom: 12px;">
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td width="48%" valign="top">
+                        <table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                          <tr>
+                            <td>
+                              💡 <strong>Share Ideas</strong><br />
+                              Post thoughts, insights and professional updates
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                      <td width="4%"></td>
+                      <td width="48%" valign="top">
+                        <table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                          <tr>
+                            <td>
+                              🔒 <strong>Manage Your Data</strong><br />
+                              Control your identity data and privacy settings
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+    
+              <!-- Feature Grid Row 3 -->
+              <tr>
+                <td style="padding-bottom: 24px;">
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td width="48%" valign="top">
+                        <table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                          <tr>
+                            <td>
+                              ⚡ <strong>Enjoy Services</strong><br />
+                              Access trust-gated services for verified professionals
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                      <td width="4%"></td>
+                      <td width="48%" valign="top">
+                        <table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                          <tr>
+                            <td>
+                              🌐 <strong>Verified Network</strong><br />
+                              Engage with professionals across the network
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+    
+              <!-- CTA Button -->
+              <tr>
+                <td style="padding-bottom: 32px;">
+                  <a href="#">Go to My Dashboard →</a>
+                </td>
+              </tr>
+     
+            </table>
+          </td>
+        </tr>
+      </table>
+        `;
+
+    this.eventEmitter.emit(AuthServiceEvents.SEND_VERIFICATION_EMAIL, {
+      to: user.email.toLowerCase(),
+      subject: `Congratulations, ${user.firstName}. You're verified`,
+      html: html,
+    });
+
     return {
       success: true,
       message: 'User activated successfully',
@@ -2010,6 +2184,11 @@ export class AdminService {
 
     const organisation = await this.prisma.organisation.findUnique({
       where: { id: orgId },
+      include: {
+        user: {
+          select: { email: true },
+        },
+      },
     });
 
     if (!organisation) {
@@ -2038,6 +2217,167 @@ export class AdminService {
           reviewedAt: new Date(),
           reviewedBy: adminUserId,
         },
+      });
+    }
+
+    if (status === 'verified') {
+      // Send email
+      const html = `
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td align="center">
+            <table width="600" cellpadding="0" cellspacing="0" border="0">
+     
+              <!-- Greeting -->
+              <tr>
+                <td style="padding-bottom: 4px;">
+                  <h2>Hello ${organisation.companyName},</h2>
+                </td>
+              </tr>
+     
+              <!-- Intro text -->
+              <tr>
+                <td style="padding-bottom: 24px;">
+                  <p>Your Taldium organisation account has been fully verified and activated. Your profile is now live and discoverable by verified professionals across the network.</p>
+                </td>
+              </tr>
+     
+               <!-- Verified Banner -->
+              <tr>
+                <td style="padding-bottom: 24px;">
+                  <table width="100%" cellpadding="16" cellspacing="0" border="1" bordercolor="#c3e6cb">
+                    <tr>
+                      <td>
+                        ✅ <strong>${organisation.companyName} — Verified Organisation</strong><br />
+                        Active and discoverable on the Taldium network
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+    
+              <!-- What You Can Do Now Label -->
+              <tr>
+                <td style="padding-bottom: 12px;">
+                  <p><small>WHAT TALDIUM UNLOCKS FOR YOUR ORGANISATION</small></p>
+                </td>
+              </tr>
+    
+              <!-- Feature Grid Row 1 -->
+              <tr>
+                <td style="padding-bottom: 12px;">
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td width="48%" valign="top">
+                        <table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                          <tr>
+                            <td>
+                              📋 <strong>Create Job Roles</strong><br />
+                              Post positions and receive verified applicants
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                      <td width="4%"></td>
+                      <td width="48%" valign="top">
+                        <table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                          <tr>
+                            <td>
+                              📂 <strong>Manage Applicants</strong><br />
+                              Review, track and manage all job applicants
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                      <td width="4%"></td>
+                      <td width="48%" valign="top">
+                        <table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                          <tr>
+                            <td>
+                              📣 <strong>Brand Communication</strong><br />
+                              Manage your organisation's voice on Taldium
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+    
+              <!-- Feature Grid Row 2 -->
+              <tr>
+                <td style="padding-bottom: 12px;">
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td width="48%" valign="top">
+                        <table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                          <tr>
+                            <td>
+                              🔍 <strong>Scout Talent</strong><br />
+                              Discover and reach out to verified professionals
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                      <td width="4%"></td>
+                      <td width="48%" valign="top">
+                        <table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                          <tr>
+                            <td>
+                              👥 <strong>Invite Your Team</strong><br />
+                              Add team members and delegate access securely
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                      <td width="4%"></td>
+                      <td width="48%" valign="top">
+                        <table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                          <tr>
+                            <td>
+                              🤝 <strong>Interact with Orgs</strong><br />
+                              Connect with other verified organisations
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+    
+            
+              <!-- CTA Button -->
+              <tr>
+                <td style="padding-bottom: 32px;">
+                  <a href="#">Go to Organisation Dashboard →</a>
+                </td>
+              </tr>
+
+
+            <tr>
+            <td style="padding-bottom: 16px;">
+              <table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                <tr>
+                  <td>
+                    <strong>ℹ Your verified badge:</strong> The Taldium verification mark on your profile signals to all professionals that Bramble Inc is a legitimate, trusted organisation — giving your postings and outreach a credibility edge.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+     
+            </table>
+          </td>
+        </tr>
+      </table>
+        `;
+      this.eventEmitter.emit(AuthServiceEvents.SEND_VERIFICATION_EMAIL, {
+        to: organisation.user.email.toLowerCase(),
+        subject: `Congratulations, ${organisation.companyName}.`,
+        html: html,
       });
     }
 
@@ -2106,7 +2446,10 @@ export class AdminService {
 
     return {
       success: true,
-      message: status === 'verified' ? 'Verification approved successfully' : 'Verification rejected',
+      message:
+        status === 'verified'
+          ? 'Verification approved successfully'
+          : 'Verification rejected',
     };
   }
 
@@ -2160,11 +2503,17 @@ export class AdminService {
 
     return {
       success: true,
-      message: status === 'verified' ? 'Location verification approved' : 'Location verification rejected',
+      message:
+        status === 'verified'
+          ? 'Location verification approved'
+          : 'Location verification rejected',
     };
   }
 
-  async markProfessionalVerificationComplete(profId: string, adminUserId: string) {
+  async markProfessionalVerificationComplete(
+    profId: string,
+    adminUserId: string,
+  ) {
     const professional = await this.prisma.professional.findUnique({
       where: { id: profId },
       include: {
@@ -2180,21 +2529,28 @@ export class AdminService {
     }
 
     const identityOk =
-      professional.identityStatus === 'verified' && professional.identityVerification?.status === 'verified';
+      professional.identityStatus === 'verified' &&
+      professional.identityVerification?.status === 'verified';
     const educationOk =
       professional.education.length === 0 ||
       professional.education.every(
-        (e) => e.verificationStatus === 'verified' || e.verificationStatus === 'rejected',
+        (e) =>
+          e.verificationStatus === 'verified' ||
+          e.verificationStatus === 'rejected',
       );
     const workOk =
       professional.workExperience.length === 0 ||
       professional.workExperience.every(
-        (w) => w.verificationStatus === 'verified' || w.verificationStatus === 'rejected',
+        (w) =>
+          w.verificationStatus === 'verified' ||
+          w.verificationStatus === 'rejected',
       );
     const projectsOk =
       professional.professionalProjects.length === 0 ||
       professional.professionalProjects.every(
-        (p) => p.verificationStatus === 'verified' || p.verificationStatus === 'rejected',
+        (p) =>
+          p.verificationStatus === 'verified' ||
+          p.verificationStatus === 'rejected',
       );
 
     if (!identityOk || !educationOk || !workOk || !projectsOk) {
