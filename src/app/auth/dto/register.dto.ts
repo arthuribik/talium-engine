@@ -57,3 +57,13 @@ export class RegisterDto {
   @IsOptional()
   profession?: string;
 }
+
+export class SendVerificationCodeDto {
+  @ApiProperty({
+    description: 'Email address to send the verification code to',
+    example: 'hello@me.com',
+  })
+  @IsEmail()
+  @IsNotEmpty()
+  email: string;
+}

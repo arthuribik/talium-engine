@@ -19,6 +19,7 @@ import { RegistrationStepDto } from './dto/registration-step-unified.dto';
 import { FinalizeRegistrationDto } from './dto/finalize-registration.dto';
 import { ResendEntity } from '../../utility/mail';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
+import { UserType } from '@prisma/client';
 
 export enum AuthServiceEvents {
   SEND_VERIFICATION_EMAIL = 'send_verification_email',
@@ -56,7 +57,7 @@ export class AuthService {
       this.emailVerificationCodes.get(emailKey)?.verified === true;
 
     // Generate verification token (only if email was not already verified via /join OTP flow)
-    const verificationToken = this.generateToken();
+    const verificationToken = this.generateOTP();
     const verificationExpiry = new Date();
     verificationExpiry.setHours(verificationExpiry.getHours() + 24);
 
@@ -91,15 +92,17 @@ export class AuthService {
 
     if (!preSignupEmailVerified) {
       const html = `
-      <h2>Welcome to taldium, ${user.firstName}!</h2>
-      <p>Thank you for registering. Please verify your email by entering this OTP (One Time Password).:</p>
+      <h2>Hi, ${user.firstName},</h2>
+      <p>You've initiated the account creation process on Taldium. Enter the one-time code below to confirm this is your email address. This is the only step required to proceed.</p>
       <p><strong>${verificationToken}</strong></p>
-      <p>This OTP will expire in 24 hours.</p>
+      <p>Expires in 10 minutes· Do not share this code</p>
+      <p>Enter this code on the verification screen to proceed. The code is single-use and will become invalid once used.</p>
+      <p>Security notice: Taldium will never ask for your OTP via phone, chat, or any other channel. If you did not request this code, your account is still secure — simply disregard this email.</p>
     `;
 
       this.eventEmitter.emit(AuthServiceEvents.SEND_VERIFICATION_EMAIL, {
         to: user.email,
-        subject: 'Verify your email',
+        subject: 'Verify your email address',
         html: html,
       });
     }
@@ -128,20 +131,23 @@ export class AuthService {
       // Check if this is a registration in progress that can be finalized
       if (existingUser.organisation) {
         const isTempEmail = existingUser.email.includes('@registration.temp');
-        const isPendingRegistration = existingUser.organisation.companyName === 'Pending Registration';
-        
+        const isPendingRegistration =
+          existingUser.organisation.companyName === 'Pending Registration';
+
         // If it's a registration in progress, suggest using finalize endpoint
         if (isTempEmail || isPendingRegistration) {
           throw new ConflictException(
-            'This email is part of a registration in progress. Please continue your registration or use the finalize endpoint to complete it.'
+            'This email is part of a registration in progress. Please continue your registration or use the finalize endpoint to complete it.',
           );
         }
       }
-      
+
       // Check if this is a registration in progress
       let stepInfo = '';
       if (existingUser.organisation) {
-        const currentStep = this.calculateCurrentStep(existingUser.organisation);
+        const currentStep = this.calculateCurrentStep(
+          existingUser.organisation,
+        );
         const stepLabels: { [key: number]: string } = {
           1: 'Registration Status',
           2: 'Incorporation Details',
@@ -202,15 +208,17 @@ export class AuthService {
     });
 
     const html = `
-      <h2>Welcome to taldium, ${user.firstName}!</h2>
-      <p>Thank you for registering. Please verify your email by entering the OTP (One Time Password).:</p>
+      <h2>Hi, ${user.firstName},</h2>
+      <p>You've initiated the account creation process on Taldium. Enter the one-time code below to confirm this is your email address. This is the only step required to proceed.</p>
       <p><strong>${verificationToken}</strong></p>
-      <p>This OTP will expire in 24 hours.</p>
+      <span>⏱ Expires in 10 minutes  ·  Do not share this code</span>
+      <p>Enter this code on the verification screen to proceed. The code is single-use and will become invalid once used.</p>
+      <p>Security notice: Taldium will never ask for your OTP via phone, chat, or any other channel. If you did not request this code, your account is still secure — simply disregard this email.</p>
     `;
 
     this.eventEmitter.emit(AuthServiceEvents.SEND_VERIFICATION_EMAIL, {
       to: user.email,
-      subject: 'Verify your email',
+      subject: 'Verify your email address',
       html: html,
     });
 
@@ -251,17 +259,24 @@ export class AuthService {
     const isTempEmail = organisation.user.email.includes('@registration.temp');
     const isUnverified = organisation.user.status === 'UNVERIFIED';
     const setupNotCompleted = !organisation.setupCompleted;
-    
+
     // Check if password was already set by user (not the auto-generated one)
     // If user has a real email (not temp) and status is still UNVERIFIED, it's likely in progress
     const isInProgress = isTempEmail || (isUnverified && setupNotCompleted);
-    
+
     if (!isInProgress) {
       // Check if user already has a proper account (verified or active status)
-      if (organisation.user.status === 'VERIFIED' || organisation.user.status === 'ACTIVE') {
-        throw new BadRequestException('This registration has already been finalized. Please log in with your credentials.');
+      if (
+        organisation.user.status === 'VERIFIED' ||
+        organisation.user.status === 'ACTIVE'
+      ) {
+        throw new BadRequestException(
+          'This registration has already been finalized. Please log in with your credentials.',
+        );
       }
-      throw new BadRequestException('This registration cannot be finalized. Please contact support.');
+      throw new BadRequestException(
+        'This registration cannot be finalized. Please contact support.',
+      );
     }
 
     // Hash the new password
@@ -283,12 +298,153 @@ export class AuthService {
 
     // Update organisation to mark as finalized
     const orgName = finalizeDto.companyName || organisation.companyName;
-    await this.prisma.organisation.update({
+    const org = await this.prisma.organisation.update({
       where: { id: organisation.id },
       data: {
-        companyName: orgName !== 'Pending Registration' ? orgName : organisation.companyName,
+        companyName:
+          orgName !== 'Pending Registration'
+            ? orgName
+            : organisation.companyName,
         setupCompleted: true, // Mark setup as completed
       },
+      include: {
+        user: {
+          select: {
+            email: true,
+          },
+        },
+      },
+    });
+
+    // Send email
+    const html = `
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td align="center">
+            <table width="600" cellpadding="0" cellspacing="0" border="0">
+    
+              <!-- Greeting -->
+              <tr>
+                <td style="padding-bottom: 4px;">
+                  <h2>Hello,</h2>
+                </td>
+              </tr>
+    
+              <!-- Intro text -->
+              <tr>
+                <td style="padding-bottom: 24px;">
+                  <p>A Taldium organisation account has been created for ${org.user.email}. Please review the registered details below. If anything is inaccurate, contact us immediately.</p>
+                </td>
+              </tr>
+    
+               <!-- Role Details Label -->
+              <tr>
+                <td style="padding-bottom: 8px;">
+                  <small>ORGANIZATION PROFILE DETAILS</small>
+                </td>
+              </tr>
+    
+              <!-- Role Details Table -->
+              <tr>
+                <td style="padding-bottom: 24px;">
+                  <table width="100%" cellpadding="8" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                    <tr>
+                      <td width="40%">Organisation Name</td>
+                      <td><strong>${org.companyName}</strong></td>
+                    </tr>
+                    <tr>
+                      <td>Email Address</td>
+                      <td><strong>${org.user.email}</strong></td>
+                    </tr>
+                    <tr>
+                      <td>Registration Status</td>
+                      <td><strong>${org.incorporationStatus}</strong></td>
+                    </tr>
+                    <tr>
+                      <td>Country of Incorporation</td>
+                      <td><strong>${org.countryOfIncorporation}</strong></td>
+                    </tr>
+                    <tr>
+                      <td>Registration Number</td>
+                      <td><strong>${org.incorporationNumber}</strong></td>
+                    </tr>
+                    <tr>
+                      <td>Industry</td>
+                      <td><strong>${org.industry}</strong></td>
+                    </tr>
+                    <tr>
+                      <td>Description</td>
+                      <td><strong>${org.description}</strong></td>
+                    </tr>
+                    <tr>
+                      <td>Founded</td>
+                      <td><strong>${org.yearOfCommencement}</strong></td>
+                    </tr>
+                    <tr>
+                      <td>Address</td>
+                      <td><strong>${org.address}</strong></td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+
+
+                  <!-- What Happens Next Label -->
+            <tr>
+              <td style="padding-bottom: 12px;">
+                <p><small>ACTIVATE YOUR ORGANISATION</small></p>
+              </td>
+            </tr>
+
+            <tr>
+                <td style="padding-bottom: 24px;">
+                  <p>To enjoy the full Taldium Network experience, verify your organisation profile data to activate your account and access all platform capabilities.</p>
+                </td>
+              </tr>
+  
+             <!-- CTA Button -->
+            <tr>
+              <td style="padding-bottom: 24px;">
+                <a href="#">Verify Organization Profile →</a>
+              </td>
+            </tr>
+  
+            <!-- Why Verify Info Box -->
+            <tr>
+              <td style="padding-bottom: 16px;">
+                <table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                  <tr>
+                    <td>
+                      <strong>ℹ Why verify?</strong>  Every organisation on Taldium undergoes verification — this builds trust with the professionals who interact with your jobs, postings, and brand presence.
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+  
+            <!-- Warning -->
+            <tr>
+              <td style="padding-bottom: 32px;">
+                <table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                  <tr>
+                    <td>
+                      ⚠ If any of the registered details above are incorrect, contact <strong>support@taldium.com</strong> immediately.
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+    
+            </table>
+          </td>
+        </tr>
+      </table>
+    `;
+
+    this.eventEmitter.emit(AuthServiceEvents.SEND_VERIFICATION_EMAIL, {
+      to: org.user.email.toLowerCase(),
+      subject: `Welcome to Taldium, ${org.companyName}.`,
+      html: html,
     });
 
     return {
@@ -329,8 +485,7 @@ export class AuthService {
       userType: user.userType,
     };
 
-    const expiresIn =
-      this.configService.get<string>('JWT_EXPIRES_IN') || '30d';
+    const expiresIn = this.configService.get<string>('JWT_EXPIRES_IN') || '30d';
     const expiresInFormatted = expiresIn.match(/^\d+$/)
       ? `${expiresIn}s`
       : expiresIn;
@@ -379,14 +534,16 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token is required');
     }
     const refreshSecret =
-      this.configService.get<string>('REFRESH_TOKEN_SECRET') || 'refresh-secret';
+      this.configService.get<string>('REFRESH_TOKEN_SECRET') ||
+      'refresh-secret';
     const refreshExpiresIn =
       this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN') || '60d';
     const jwtSecret =
       this.configService.get<string>('JWT_SECRET') || 'default-secret';
-    const expiresIn =
-      this.configService.get<string>('JWT_EXPIRES_IN') || '30d';
-    const expiresInFormatted = expiresIn.match(/^\d+$/) ? `${expiresIn}s` : expiresIn;
+    const expiresIn = this.configService.get<string>('JWT_EXPIRES_IN') || '30d';
+    const expiresInFormatted = expiresIn.match(/^\d+$/)
+      ? `${expiresIn}s`
+      : expiresIn;
 
     let payload: { sub: string; email: string; userType: string };
     try {
@@ -423,7 +580,9 @@ export class AuthService {
     });
     const newRefreshToken = this.jwtService.sign(newPayload, {
       secret: refreshSecret,
-      expiresIn: refreshExpiresIn.match(/^\d+$/) ? `${refreshExpiresIn}s` : refreshExpiresIn,
+      expiresIn: refreshExpiresIn.match(/^\d+$/)
+        ? `${refreshExpiresIn}s`
+        : refreshExpiresIn,
     });
 
     return {
@@ -609,6 +768,183 @@ export class AuthService {
       verified: true,
     });
 
+    // pull user info here, if professional, send account activated email, org skip
+    const user = await this.prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+      include: {
+        professional: {
+          select: {
+            country: true,
+            profession: true,
+          },
+        },
+      },
+    });
+
+    if (user && user.userType === UserType.PROFESSIONAL) {
+      // Send account activated mail here
+      const html = `
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td align="center">
+            <table width="600" cellpadding="0" cellspacing="0" border="0">
+    
+              <!-- Greeting -->
+              <tr>
+                <td style="padding-bottom: 4px;">
+                  <h2>Hi ${user.firstName},</h2>
+                </td>
+              </tr>
+    
+              <!-- Intro text -->
+              <tr>
+                <td style="padding-bottom: 24px;">
+                  <p>Your Taldium professional account has been created. Below is a summary of the details registered on your profile. Please review them carefully — if anything is incorrect, contact us immediately.</p>
+                </td>
+              </tr>
+    
+               <!-- Role Details Label -->
+              <tr>
+                <td style="padding-bottom: 8px;">
+                  <small>ACCOUNT DETAILS</small>
+                </td>
+              </tr>
+    
+              <!-- Role Details Table -->
+              <tr>
+                <td style="padding-bottom: 24px;">
+                  <table width="100%" cellpadding="8" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                    <tr>
+                      <td width="40%">First Name</td>
+                      <td><strong>${user.firstName}</strong></td>
+                    </tr>
+                    <tr>
+                      <td>Last Name</td>
+                      <td><strong>${user.lastName}</strong></td>
+                    </tr>
+                    <tr>
+                      <td>Email Address</td>
+                      <td><strong>${user.email}</strong></td>
+                    </tr>
+                    <tr>
+                      <td>Phone Number</td>
+                      <td><strong>${user.phoneNumber}</strong></td>
+                    </tr>
+                    <tr>
+                      <td>Nationality</td>
+                      <td><strong>${user.professional.country}</strong></td>
+                    </tr>
+                    <tr>
+                      <td>Profession / Job Title</td>
+                      <td><strong>${user.professional.profession}</strong></td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+
+
+                  <!-- What Happens Next Label -->
+            <tr>
+              <td style="padding-bottom: 12px;">
+                <p><small>NEXT STEP — VERIFICATION CENTRE</small></p>
+              </td>
+            </tr>
+
+            <tr>
+                <td style="padding-bottom: 24px;">
+                  <p>To interact with organisations and professionals on the network, your profile must be verified. Head to the Verification Centre to complete the following steps:</p>
+                </td>
+              </tr>
+  
+            <!-- Next Steps -->
+            <tr>
+              <td style="padding-bottom: 24px;">
+                <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td valign="top" width="32" style="padding-bottom: 16px;">1</td>
+                    <td style="padding-bottom: 16px;">
+                      <strong>Identity</strong><br />
+                      Government-issued ID and legal name
+                    </td>
+                  </tr>
+                  <tr>
+                    <td valign="top" style="padding-bottom: 16px;">2</td>
+                    <td style="padding-bottom: 16px;">
+                      <strong>Location</strong><br />
+                      Primary city and country of residence
+                    </td>
+                  </tr>
+                  <tr>
+                    <td valign="top" style="padding-bottom: 16px;">3</td>
+                    <td style="padding-bottom: 16px;">
+                      <strong>Work History</strong><br />
+                      Professional experience and employment records
+                    </td>
+                  </tr>
+                   <tr>
+                    <td valign="top" style="padding-bottom: 16px;">4</td>
+                    <td style="padding-bottom: 16px;">
+                      <strong>Education</strong><br />
+                      Qualifications and academic background
+                    </td>
+                  </tr>
+                   <tr>
+                    <td valign="top" style="padding-bottom: 16px;">5</td>
+                    <td style="padding-bottom: 16px;">
+                      <strong>Other Information</strong><br />
+                      Skills, certifications, and credentials
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+  
+             <!-- CTA Button -->
+            <tr>
+              <td style="padding-bottom: 24px;">
+                <a href="#">Go to Verification Centre →</a>
+              </td>
+            </tr>
+  
+            <!-- Why Verify Info Box -->
+            <tr>
+              <td style="padding-bottom: 16px;">
+                <table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                  <tr>
+                    <td>
+                      <strong>ℹ Why verify?</strong> Taldium's verification layer ensures every professional is authentic. Verified profiles unlock job applications, organisation interactions, and trust-based services across the network.
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+  
+            <!-- Warning -->
+            <tr>
+              <td style="padding-bottom: 32px;">
+                <table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                  <tr>
+                    <td>
+                      ⚠ If any of the registered details above are incorrect, contact <strong>support@taldium.com</strong> immediately.
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+    
+            </table>
+          </td>
+        </tr>
+      </table>
+    `;
+
+      this.eventEmitter.emit(AuthServiceEvents.SEND_VERIFICATION_EMAIL, {
+        to: email.toLowerCase(),
+        subject: `Welcome to Taldium, ${user.firstName}`,
+        html: html,
+      });
+    }
+
     return {
       status: 'success',
       message: 'Email verified successfully',
@@ -631,7 +967,7 @@ export class AuthService {
 
     // Generate 6-digit code
     const code = Math.floor(100000 + Math.random() * 900000).toString();
-    console.log(`Verification code: ${code}`);
+    // console.log(`Verification code: ${code}`);
 
     // Store code with expiration (10 minutes)
     const expiresAt = new Date();
@@ -648,16 +984,78 @@ export class AuthService {
     // TODO: Send email with verification code
     // In production, use an email service (SendGrid, AWS SES, etc.)
     console.log(`Verification code for ${email}: ${code}`);
+
     const html = `
-      <h2>Welcome to taldium!</h2> 
-      <p>Thank you for registering. Please verify your email by entering this OTP (One Time Password):</p>
-      <p><strong>${code}</strong></p>
-      <p>This OTP will expire in 10 minutes.</p>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" border="0">
+ 
+          <!-- Greeting -->
+          <tr>
+            <td style="padding-bottom: 4px;">
+              <h2>Hi,</h2>
+            </td>
+          </tr>
+ 
+          <!-- Intro text -->
+          <tr>
+            <td style="padding-bottom: 24px;">
+              <p>You've initiated the account creation process on Taldium. Enter the one-time code below to confirm this is your email address. This is the only step required to proceed.</p>
+            </td>
+          </tr>
+ 
+          <!-- OTP Card -->
+          <tr>
+            <td style="padding-bottom: 24px;">
+              <table width="100%" cellpadding="24" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                <tr>
+                  <td align="center">
+                    <p><small>ONE-TIME VERIFICATION CODE</small></p>
+ 
+                    <!-- OTP Digits -->
+                    <table cellpadding="0" cellspacing="8" border="0" style="margin: 16px auto;">
+                      <tr>
+                       ${this.renderOtpDigits(code)}
+                      </tr>
+                    </table>
+ 
+                    <p><small>⏱ Expires in <strong>10 minutes</strong> · Do not share this code</small></p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+ 
+          <!-- Instruction -->
+          <tr>
+            <td style="padding-bottom: 24px;">
+              <p>Enter this code on the verification screen to proceed. The code is single-use and will become invalid once used.</p>
+            </td>
+          </tr>
+ 
+          <!-- Security Notice -->
+          <tr>
+            <td style="padding-bottom: 32px;">
+              <table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#e0e0e0">
+                <tr>
+                  <td>
+                    🔒 <strong>Security notice:</strong> Taldium will never ask for your OTP via phone, chat, or any other channel. If you did not request this code, your account is still secure — simply disregard this email.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+ 
+        </table>
+      </td>
+    </tr>
+  </table>
     `;
 
     this.eventEmitter.emit(AuthServiceEvents.SEND_VERIFICATION_EMAIL, {
       to: email.toLowerCase(),
-      subject: 'Verify your email',
+      subject: 'Verify your email address',
       html: html,
     });
 
@@ -698,6 +1096,14 @@ export class AuthService {
       Math.random().toString(36).substring(2, 15) +
       Math.random().toString(36).substring(2, 15)
     );
+  }
+
+  private generateOTP(len = 6): string {
+    let otp = '';
+    for (let i = 0; i < len; i++) {
+      otp += Math.floor(Math.random() * 10).toString();
+    }
+    return otp;
   }
 
   // In-memory store for registration progress
@@ -773,14 +1179,18 @@ export class AuthService {
         // Need to preserve any existing text description
         let existingCategoryData = {};
         let existingTextDescription = '';
-        
+
         if (organisation.description) {
           try {
             // Try to parse as JSON first
             if (organisation.description.trim().startsWith('{')) {
               const parsed = JSON.parse(organisation.description);
               // Check if it has category data or is just text
-              if (parsed.category || parsed.schoolType || parsed.religiousOrgType) {
+              if (
+                parsed.category ||
+                parsed.schoolType ||
+                parsed.religiousOrgType
+              ) {
                 existingCategoryData = parsed;
               } else {
                 // It's a text description, preserve it
@@ -795,7 +1205,7 @@ export class AuthService {
             existingTextDescription = organisation.description;
           }
         }
-        
+
         // Merge category data
         const categoryData = {
           ...existingCategoryData,
@@ -806,7 +1216,7 @@ export class AuthService {
           politicalPartyCountry: data.politicalPartyCountry,
           associatedSchool: data.associatedSchool,
         };
-        
+
         // Store both category data and text description
         updateData.description = JSON.stringify({
           ...categoryData,
@@ -821,7 +1231,11 @@ export class AuthService {
             if (organisation.description.trim().startsWith('{')) {
               const parsed = JSON.parse(organisation.description);
               // Extract category data if it exists
-              if (parsed.category || parsed.schoolType || parsed.religiousOrgType) {
+              if (
+                parsed.category ||
+                parsed.schoolType ||
+                parsed.religiousOrgType
+              ) {
                 categoryDataToPreserve = {
                   category: parsed.category,
                   schoolType: parsed.schoolType,
@@ -836,7 +1250,7 @@ export class AuthService {
             // Not JSON, ignore
           }
         }
-        
+
         // Update description - preserve category data if it exists
         if (data.description) {
           if (Object.keys(categoryDataToPreserve).length > 0) {
@@ -848,7 +1262,7 @@ export class AuthService {
             updateData.description = data.description;
           }
         }
-        
+
         if (data.otherName) updateData.companyName = data.otherName;
         if (data.industry) updateData.industry = data.industry;
         if (data.headquartersCity || data.headquartersCountry) {
@@ -875,7 +1289,7 @@ export class AuthService {
           if (data.phoneNumber) {
             userUpdateData.phoneNumber = data.phoneNumber;
           }
-          
+
           if (Object.keys(userUpdateData).length > 0) {
             await this.prisma.user.update({
               where: { id: organisation.userId },
@@ -909,14 +1323,18 @@ export class AuthService {
         // Need to preserve any existing text description
         let existingCategoryData8 = {};
         let existingTextDescription8 = '';
-        
+
         if (organisation.description) {
           try {
             // Try to parse as JSON first
             if (organisation.description.trim().startsWith('{')) {
               const parsed = JSON.parse(organisation.description);
               // Check if it has category data or is just text
-              if (parsed.category || parsed.schoolType || parsed.religiousOrgType) {
+              if (
+                parsed.category ||
+                parsed.schoolType ||
+                parsed.religiousOrgType
+              ) {
                 existingCategoryData8 = parsed;
                 // Preserve text description if it exists
                 if (parsed.textDescription) {
@@ -935,7 +1353,7 @@ export class AuthService {
             existingTextDescription8 = organisation.description;
           }
         }
-        
+
         // Merge category data
         const categoryData8 = {
           ...existingCategoryData8,
@@ -946,7 +1364,7 @@ export class AuthService {
           politicalPartyCountry: data.politicalPartyCountry,
           associatedSchool: data.associatedSchool,
         };
-        
+
         // Store both category data and text description
         updateData.description = JSON.stringify({
           ...categoryData8,
@@ -1035,7 +1453,8 @@ export class AuthService {
           try {
             if (organisation.description.trim().startsWith('{')) {
               const parsed = JSON.parse(organisation.description);
-              textDescription = parsed.textDescription || organisation.description;
+              textDescription =
+                parsed.textDescription || organisation.description;
             }
           } catch (e) {
             // Not JSON, use as is
@@ -1068,7 +1487,8 @@ export class AuthService {
           try {
             if (organisation.description.trim().startsWith('{')) {
               const parsed = JSON.parse(organisation.description);
-              textDescription7 = parsed.textDescription || organisation.description;
+              textDescription7 =
+                parsed.textDescription || organisation.description;
             }
           } catch (e) {
             // Not JSON, use as is
@@ -1287,5 +1707,18 @@ export class AuthService {
   async handleSendVerificationEmailEvent(data: any) {
     const sendEmailResult = await this.mailer.send(data, data.html);
     console.log('Verification email sent:', sendEmailResult?.data?.id);
+  }
+
+  private renderOtpDigits(otp: string): string {
+    return otp
+      .split('')
+      .map(
+        (digit, index) =>
+          `${index === 3 ? '<td width="16"></td>' : ''}
+        <td align="center" width="48" height="56" style="border: 1px solid #ccc; text-align: center; font-size: 24px; font-weight: bold;">
+          ${digit}
+        </td>`,
+      )
+      .join('');
   }
 }
