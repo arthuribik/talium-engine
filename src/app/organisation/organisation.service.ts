@@ -9,19 +9,50 @@ import {
 import { PrismaService } from '../../utility/prisma/prisma.service';
 import { OrganisationSetupDto } from './dto/organisation-setup.dto';
 import { VerificationRequestDto } from './dto/verification-request.dto';
+import { KybIncorporationDto } from './dto/kyb-incorporation.dto';
 import { UpdateOrganisationProfileDto } from './dto/update-profile.dto';
-import { BillingEntityType } from '@prisma/client';
+import { BillingEntityType, Prisma } from '@prisma/client';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
 import { InitiateWalletFundDto } from './dto/initiate-wallet-fund.dto';
 import { ensureDefaultBillingPlans } from '../billing/billing-plans.seed';
 import { CreateJobDto } from '../job/dto/create-job.dto';
 import { ResendEntity } from '../../utility/mail';
+import { S3Service } from '../../utility/s3/s3.service';
+import {
+  SETTINGS_ORG_ROLE_ORDER,
+  SYSTEM_ROLE_DEFINITIONS,
+  formatPermissionLabel,
+} from './organisation-roles.config';
+import {
+  PERMISSION_CATALOG_SECTIONS,
+  formatPermissionKeyForDisplay,
+  isValidCustomRolePermissionList,
+  isValidGranularPermissionList,
+} from './organisation-granular-permissions.config';
+import {
+  INTEGRATION_CATALOG,
+  isIntegrationProvider,
+} from './organisation-integrations.config';
+import {
+  CreateOrganisationCustomRoleDto,
+  UpdateOrganisationCustomRoleDto,
+} from './dto/organisation-custom-role.dto';
 
 @Injectable()
 export class OrganisationService {
+  /** Accept pasted LinkedIn URLs without a scheme. */
+  private normalizeLinkedInUrl(raw: string | undefined | null): string | null {
+    if (raw == null || typeof raw !== 'string') return null;
+    const t = raw.trim();
+    if (!t) return null;
+    if (/^https?:\/\//i.test(t)) return t;
+    return `https://${t}`;
+  }
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     private readonly mailService: ResendEntity,
+    private readonly s3: S3Service,
   ) {}
 
   async getOrganisationProfile(userId: string) {
@@ -144,6 +175,7 @@ export class OrganisationService {
 
       // Contact & Online
       website: organisation.website || null,
+      logoUrl: organisation.logoUrl || null,
       socialMedia: {
         facebook: socialMedia.facebook || null,
         twitter: socialMedia.twitter || null,
@@ -167,6 +199,74 @@ export class OrganisationService {
     return {
       success: true,
       data: profileData,
+    };
+  }
+
+  async uploadOrganisationLogo(
+    userId: string,
+    file: { buffer: Buffer; originalname: string; mimetype?: string },
+  ) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+    const mime = file.mimetype || '';
+    if (!mime.startsWith('image/')) {
+      throw new BadRequestException(
+        'File must be an image (e.g. JPEG, PNG, WebP)',
+      );
+    }
+    const maxBytes = 5 * 1024 * 1024;
+    if (file.buffer.length > maxBytes) {
+      throw new BadRequestException('Logo must be at most 5 MB');
+    }
+    const safeName = (file.originalname || 'logo').replace(
+      /[^a-zA-Z0-9.-]/g,
+      '_',
+    );
+    const filename = `${organisation.id}-${Date.now()}-${safeName}`;
+    const url = await this.s3.upload(file.buffer, filename, {
+      prefix: 'organisation-logos',
+      contentType: file.mimetype,
+    });
+    await this.prisma.organisation.update({
+      where: { userId },
+      data: { logoUrl: url },
+    });
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Logo Updated',
+      details: 'Organisation logo was uploaded or replaced.',
+      level: 'info',
+    });
+    return {
+      success: true,
+      message: 'Logo uploaded successfully',
+      data: { logoUrl: url },
+    };
+  }
+
+  async deleteOrganisationLogo(userId: string) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+    await this.prisma.organisation.update({
+      where: { userId },
+      data: { logoUrl: null },
+    });
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Logo Removed',
+      details: 'Organisation logo was removed.',
+      level: 'info',
+    });
+    return {
+      success: true,
+      message: 'Logo removed',
+      data: { logoUrl: null as string | null },
     };
   }
 
@@ -277,6 +377,12 @@ export class OrganisationService {
     const updated = await this.prisma.organisation.update({
       where: { userId },
       data: updateData,
+    });
+
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Profile Updated',
+      details: 'Organisation profile fields were saved.',
+      level: 'info',
     });
 
     return {
@@ -841,6 +947,7 @@ export class OrganisationService {
           organisationId: organisation.id,
         },
       },
+      include: { job: { select: { jobTitle: true } } },
     });
 
     if (!application) {
@@ -857,6 +964,19 @@ export class OrganisationService {
     const updated = await this.prisma.jobApplication.update({
       where: { id: applicationId },
       data: updateData,
+    });
+
+    const jobTitle = application.job?.jobTitle ?? 'Job';
+    const level =
+      status === 'hired' || status === 'accepted'
+        ? ('success' as const)
+        : status === 'rejected'
+          ? ('warning' as const)
+          : ('info' as const);
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Application Status Changed',
+      details: `Application for "${jobTitle}" set to ${status}.`,
+      level,
     });
 
     return {
@@ -899,6 +1019,18 @@ export class OrganisationService {
     const updated = await this.prisma.job.update({
       where: { id: jobId },
       data: { status: status as any },
+    });
+
+    const level =
+      status === 'published'
+        ? ('success' as const)
+        : status === 'closed'
+          ? ('warning' as const)
+          : ('info' as const);
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Job Status Updated',
+      details: `"${job.jobTitle}" is now ${status}.`,
+      level,
     });
 
     return {
@@ -1313,6 +1445,20 @@ export class OrganisationService {
 
     const { page, limit, search, jobTitle, searchType, country, city, verified, minExperience } = filters;
     const skip = (page - 1) * limit;
+    const effectiveSearchType = searchType || 'partial';
+
+    // Job title, domicile city, free-text search, and min experience are applied *after* the row
+    // is mapped to "latest work experience" role. Paginating in SQL first would only scan the
+    // newest `limit` profiles — older matches (and newly added ones once they appear in any
+    // slice) would be missing from Direct Scout results.
+    const needsFullScanBeforePagination =
+      !!(jobTitle?.trim()) ||
+      !!(city?.trim()) ||
+      !!(search?.trim()) ||
+      minExperience !== undefined;
+
+    /** Cap for in-memory filter path (Direct Scout / filtered directory). */
+    const FILTER_CANDIDATE_CAP = 10_000;
 
     // Build where clause for filtering
     const where: any = {
@@ -1371,39 +1517,150 @@ export class OrganisationService {
       }
     }
 
-    // Get professionals with work experience for years calculation
-    const [professionals, total] = await Promise.all([
-      this.prisma.professional.findMany({
-        where,
-        skip,
-        take: limit,
-        include: {
-          user: {
-            select: {
-              id: true,
-              email: true,
-              firstName: true,
-              lastName: true,
-              status: true,
-            },
-          },
-          identityVerification: true,
-          workExperience: {
-            orderBy: {
-              startDate: 'asc',
-            },
-          },
-          education: {
-            take: 1,
-            orderBy: {
-              createdAt: 'desc',
-            },
-          },
+    const include: Prisma.ProfessionalInclude = {
+      user: {
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          status: true,
         },
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.prisma.professional.count({ where }),
-    ]);
+      },
+      identityVerification: true,
+      workExperience: {
+        orderBy: {
+          startDate: 'asc',
+        },
+      },
+      education: {
+        take: 1,
+        orderBy: {
+          createdAt: 'desc',
+        },
+      },
+    };
+
+    const professionals = needsFullScanBeforePagination
+      ? await this.prisma.professional.findMany({
+          where,
+          take: FILTER_CANDIDATE_CAP,
+          orderBy: { createdAt: 'desc' },
+          include,
+        })
+      : await this.prisma.professional.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { createdAt: 'desc' },
+          include,
+        });
+
+    const dbCount = needsFullScanBeforePagination
+      ? 0
+      : await this.prisma.professional.count({ where });
+
+    const extractNestedSearchTerms = (input: unknown, terms: string[], depth = 0) => {
+      if (depth > 4 || input === null || input === undefined) return;
+      if (typeof input === 'string') {
+        const v = input.trim().toLowerCase();
+        if (v) terms.push(v);
+        return;
+      }
+      if (typeof input === 'number' || typeof input === 'boolean') {
+        terms.push(String(input).toLowerCase());
+        return;
+      }
+      if (Array.isArray(input)) {
+        input.forEach((item) => extractNestedSearchTerms(item, terms, depth + 1));
+        return;
+      }
+      if (typeof input === 'object') {
+        Object.values(input as Record<string, unknown>).forEach((value) =>
+          extractNestedSearchTerms(value, terms, depth + 1),
+        );
+      }
+    };
+
+    const getVerificationProfileSearchTerms = (prof: any): string[] => {
+      const terms: string[] = [];
+      const push = (value?: unknown) => {
+        if (typeof value !== 'string') return;
+        const v = value.trim().toLowerCase();
+        if (v) terms.push(v);
+      };
+
+      // Core professional/user identity fields displayed in verification/profile views.
+      push(prof.profession);
+      push(prof.description);
+      push(prof.country);
+      push(prof.nationality);
+      push(prof.gender);
+      push(prof.middleName);
+      push(prof?.user?.firstName);
+      push(prof?.user?.lastName);
+      push(prof?.user?.email);
+
+      const iv = prof.identityVerification;
+      if (iv) {
+        push(iv.firstName);
+        push(iv.lastName);
+        push(iv.middleName);
+        push(iv.email);
+        push(iv.phoneNumber);
+        push(iv.nationality);
+        push(iv.country);
+        push(iv.dateOfBirth);
+        push(iv.idType);
+      }
+
+      // Work verification data.
+      (prof.workExperience || []).forEach((exp: any) => {
+        push(exp.role);
+        push(exp.companyName);
+        push(exp.location as unknown as string);
+        push(exp.employmentType);
+        push(exp.workType);
+        push(exp.description);
+        push(exp.responsibilities);
+        push(exp.achievements);
+        extractNestedSearchTerms(exp.skills, terms);
+        extractNestedSearchTerms(exp.location, terms);
+      });
+
+      // Education verification data.
+      (prof.education || []).forEach((edu: any) => {
+        push(edu.institutionName);
+        push(edu.schoolType);
+        push(edu.levelOfEducation);
+        push(edu.qualification);
+        push(edu.fieldOfStudy);
+        push(edu.grade);
+        push(edu.country);
+        push(edu.programDescription);
+        push(edu.courseworkResponsibilities);
+        push(edu.honorsAchievements);
+        push(edu.associatedSkills);
+        push(edu.studentVerificationEmail);
+      });
+
+      // Project verification data.
+      (prof.professionalProjects || []).forEach((proj: any) => {
+        push(proj.title);
+        push(proj.description);
+        push(proj.projectLink);
+        push(proj.role);
+        extractNestedSearchTerms(proj.teamMembers, terms);
+      });
+
+      // JSON sections shown on verification screens.
+      extractNestedSearchTerms(prof.certifications, terms);
+      extractNestedSearchTerms(prof.familyInfo, terms);
+      extractNestedSearchTerms(prof.locations, terms);
+      extractNestedSearchTerms(prof.socialMedia, terms);
+
+      return terms;
+    };
 
     // Calculate years of experience and filter by it
     const professionalsWithExperience = professionals
@@ -1465,17 +1722,21 @@ export class OrganisationService {
         }
 
         // Filter by job title (profession) - strict = exact match, partial = contains, fuzzy = all words in title appear in role
-        if (jobTitle && prof.profession) {
+        if (jobTitle?.trim()) {
           const title = jobTitle.toLowerCase().trim();
-          const role = prof.profession.toLowerCase();
-          if (searchType === 'strict') {
-            if (role !== title) return false;
-          } else if (searchType === 'fuzzy') {
+          const role = (prof.profession || '').toLowerCase();
+          const searchTerms = getVerificationProfileSearchTerms(prof);
+          const profileCorpus = searchTerms.join(' ');
+          if (effectiveSearchType === 'strict') {
+            if (!(role === title || searchTerms.some((term) => term === title))) return false;
+          } else if (effectiveSearchType === 'fuzzy') {
             const words = title.split(/\s+/).filter(Boolean);
-            const allWordsMatch = words.every((word) => role.includes(word));
+            const allWordsMatch = words.every(
+              (word) => role.includes(word) || profileCorpus.includes(word),
+            );
             if (!allWordsMatch) return false;
           } else {
-            if (!role.includes(title)) return false;
+            if (!(role.includes(title) || profileCorpus.includes(title))) return false;
           }
         }
 
@@ -1492,6 +1753,12 @@ export class OrganisationService {
 
         return true;
       });
+
+    const totalFiltered = professionalsWithExperience.length;
+    const pageSlice =
+      needsFullScanBeforePagination
+        ? professionalsWithExperience.slice(skip, skip + limit)
+        : professionalsWithExperience;
 
     // Get verification status (percentage + label for badges)
     const getVerificationStatus = (prof: any) => {
@@ -1526,10 +1793,13 @@ export class OrganisationService {
       return map[c] || c;
     };
 
+    const totalForPagination = needsFullScanBeforePagination ? totalFiltered : dbCount;
+    const totalPages = Math.max(1, Math.ceil(totalForPagination / limit));
+
     return {
       success: true,
       data: {
-        professionals: professionalsWithExperience.map((prof) => ({
+        professionals: pageSlice.map((prof) => ({
           id: prof.id,
           userId: prof.userId,
           name: `${prof.user.firstName || ''} ${prof.user.lastName || ''}`.trim() || prof.user.email,
@@ -1551,8 +1821,8 @@ export class OrganisationService {
         pagination: {
           page,
           limit,
-          total: professionalsWithExperience.length,
-          totalPages: Math.ceil(professionalsWithExperience.length / limit),
+          total: totalForPagination,
+          totalPages,
         },
       },
     };
@@ -1845,6 +2115,12 @@ export class OrganisationService {
       // Continue even if email fails
     }
 
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Professional Message Sent',
+      details: `Email to ${professional.user.email}${jobTitle ? ` regarding "${jobTitle}"` : ''}.`,
+      level: 'info',
+    });
+
     return {
       success: true,
       message: 'Message sent successfully',
@@ -1911,11 +2187,19 @@ export class OrganisationService {
 
     const professional = await this.prisma.professional.findUnique({
       where: { id: professionalId },
+      include: {
+        user: { select: { firstName: true, lastName: true, email: true } },
+      },
     });
 
     if (!professional) {
       throw new NotFoundException('Professional not found');
     }
+
+    const profLabel =
+      `${professional.user?.firstName ?? ''} ${professional.user?.lastName ?? ''}`.trim() ||
+      professional.user?.email ||
+      'Professional';
 
     // If jobId is provided, update the application status
     if (jobId) {
@@ -1948,6 +2232,16 @@ export class OrganisationService {
           jobTitle,
         );
       }
+
+      const hiredJob = await this.prisma.job.findFirst({
+        where: { id: jobId, organisationId: organisation.id },
+        select: { jobTitle: true },
+      });
+      void this.logOrganisationActivityFromUser(organisation.id, userId, {
+        action: 'Applicant Hired',
+        details: `Hired ${profLabel} for "${hiredJob?.jobTitle ?? 'job'}".`,
+        level: 'success',
+      });
 
       return {
         success: true,
@@ -2004,6 +2298,17 @@ export class OrganisationService {
             description: description || null,
           },
         },
+      });
+      void this.logOrganisationActivityFromUser(organisation.id, userId, {
+        action: 'Applicant Hired',
+        details: `Hired ${profLabel} for "${firstJob.jobTitle}" (direct scout flow).`,
+        level: 'success',
+      });
+    } else if (scoutMessage) {
+      void this.logOrganisationActivityFromUser(organisation.id, userId, {
+        action: 'Direct Scout Sent',
+        details: `Sent direct scout message to ${profLabel}.`,
+        level: 'info',
       });
     }
 
@@ -2180,6 +2485,11 @@ export class OrganisationService {
       });
       throw new ServiceUnavailableException('Could not send invitation email. Please try again.');
     }
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Team Member Invited',
+      details: `Invited ${email} as ${dto.role.replace('org_', '').replace('_', ' ')}.`,
+      level: 'info',
+    });
     return {
       success: true,
       message: 'Invitation sent successfully',
@@ -2197,11 +2507,19 @@ export class OrganisationService {
     if (!organisation) throw new NotFoundException('Organisation not found');
     const member = await this.prisma.organisationMember.findFirst({
       where: { id: memberId, organisationId: organisation.id },
+      include: { user: { select: { email: true, firstName: true, lastName: true } } },
     });
     if (!member) throw new NotFoundException('Member not found');
     await this.prisma.organisationMember.update({
       where: { id: memberId },
       data: { role: role as any },
+    });
+    const memberLabel =
+      `${member.user.firstName} ${member.user.lastName}`.trim() || member.user.email;
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Team Role Updated',
+      details: `Changed ${memberLabel}'s role to ${role.replace('org_', '').replace('_', ' ')}.`,
+      level: 'warning',
     });
     return {
       success: true,
@@ -2217,10 +2535,18 @@ export class OrganisationService {
     if (!organisation) throw new NotFoundException('Organisation not found');
     const member = await this.prisma.organisationMember.findFirst({
       where: { id: memberId, organisationId: organisation.id },
+      include: { user: { select: { email: true, firstName: true, lastName: true } } },
     });
     if (!member) throw new NotFoundException('Member not found');
+    const memberLabel =
+      `${member.user.firstName} ${member.user.lastName}`.trim() || member.user.email;
     await this.prisma.organisationMember.delete({
       where: { id: memberId },
+    });
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Team Member Removed',
+      details: `Removed ${memberLabel} from the organisation.`,
+      level: 'info',
     });
     return {
       success: true,
@@ -2283,9 +2609,14 @@ export class OrganisationService {
         title: dto.title.trim(),
         bio: (dto.bio && dto.bio.trim()) ? dto.bio.trim() : null,
         email: (dto.email && dto.email.trim()) ? dto.email.trim() : null,
-        linkedInUrl: (dto.linkedInUrl && dto.linkedInUrl.trim()) ? dto.linkedInUrl.trim() : null,
+        linkedInUrl: this.normalizeLinkedInUrl(dto.linkedInUrl),
         sortOrder: nextOrder,
       },
+    });
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Leadership Profile Added',
+      details: `Added ${employee.firstName} ${employee.lastName} (${employee.title}) to public leadership.`,
+      level: 'info',
     });
     return {
       success: true,
@@ -2333,8 +2664,15 @@ export class OrganisationService {
         ...(dto.title != null && { title: dto.title.trim() }),
         ...(dto.bio !== undefined && { bio: (dto.bio && dto.bio.trim()) ? dto.bio.trim() : null }),
         ...(dto.email !== undefined && { email: (dto.email && dto.email.trim()) ? dto.email.trim() : null }),
-        ...(dto.linkedInUrl !== undefined && { linkedInUrl: (dto.linkedInUrl && dto.linkedInUrl.trim()) ? dto.linkedInUrl.trim() : null }),
+        ...(dto.linkedInUrl !== undefined && {
+          linkedInUrl: this.normalizeLinkedInUrl(dto.linkedInUrl),
+        }),
       },
+    });
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Leadership Profile Updated',
+      details: `Updated ${updated.firstName} ${updated.lastName} (${updated.title}).`,
+      level: 'info',
     });
     return {
       success: true,
@@ -2363,13 +2701,60 @@ export class OrganisationService {
       where: { id: employeeId, organisationId: organisation.id },
     });
     if (!employee) throw new NotFoundException('Key employee not found');
+    const label = `${employee.firstName} ${employee.lastName}`.trim();
     await this.prisma.organisationKeyEmployee.delete({
       where: { id: employeeId },
+    });
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Leadership Profile Removed',
+      details: `Removed ${label} from public leadership.`,
+      level: 'info',
     });
     return {
       success: true,
       message: 'Key employee removed successfully',
       data: { id: employeeId },
+    };
+  }
+
+  async reorderKeyEmployees(userId: string, orderedIds: string[]) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+      include: { keyEmployees: { select: { id: true } } },
+    });
+    if (!organisation) throw new NotFoundException('Organisation not found');
+
+    const existing = new Set(organisation.keyEmployees.map((e) => e.id));
+    if (orderedIds.length !== existing.size) {
+      throw new BadRequestException(
+        'employeeIds must include every key employee exactly once',
+      );
+    }
+    for (const id of orderedIds) {
+      if (!existing.has(id)) {
+        throw new BadRequestException(`Unknown employee id: ${id}`);
+      }
+    }
+
+    await this.prisma.$transaction(
+      orderedIds.map((id, index) =>
+        this.prisma.organisationKeyEmployee.update({
+          where: { id },
+          data: { sortOrder: index },
+        }),
+      ),
+    );
+
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Leadership Order Updated',
+      details: 'Reordered leadership profiles on the public page.',
+      level: 'info',
+    });
+
+    return {
+      success: true,
+      message: 'Employee order updated',
+      data: { employeeIds: orderedIds },
     };
   }
 
@@ -2434,6 +2819,12 @@ export class OrganisationService {
       },
     });
 
+    void this.logOrganisationActivityFromUser(orgId, userId, {
+      action: 'Organisation Setup Completed',
+      details: 'Initial organisation setup was completed.',
+      level: 'success',
+    });
+
     return {
       success: true,
       message: 'Organisation profile updated successfully',
@@ -2451,6 +2842,96 @@ export class OrganisationService {
         setupCompleted: updated.setupCompleted,
         profileCompleteness: updated.profileCompleteness,
         updatedAt: updated.updatedAt,
+      },
+    };
+  }
+
+  async submitKybIncorporationDetails(userId: string, dto: KybIncorporationDto) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+    });
+
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+
+    if (organisation.verificationStatus === 'verified') {
+      throw new BadRequestException('Organisation is already verified');
+    }
+
+    const docPayload = {
+      kind: 'kyb_incorporation',
+      legalName: dto.legalName.trim(),
+      incorporationNumber: dto.incorporationNumber.trim(),
+      countryOfIncorporation: dto.countryOfIncorporation.trim(),
+      yearOfIncorporation: dto.yearOfIncorporation,
+      submittedAt: new Date().toISOString(),
+    };
+
+    const estimatedCompletionDate = new Date();
+    estimatedCompletionDate.setDate(estimatedCompletionDate.getDate() + 2);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.organisation.update({
+        where: { id: organisation.id },
+        data: {
+          companyName: dto.legalName.trim(),
+          incorporationNumber: dto.incorporationNumber.trim(),
+          countryOfIncorporation: dto.countryOfIncorporation.trim(),
+          yearOfCommencement: dto.yearOfIncorporation,
+          isRegistered: true,
+          verificationStatus: 'under_review',
+        },
+      });
+
+      const existing = await tx.organisationVerification.findFirst({
+        where: {
+          organisationId: organisation.id,
+          status: { in: ['under_review', 'pending'] },
+        },
+        orderBy: { submittedAt: 'desc' },
+      });
+
+      if (existing) {
+        await tx.organisationVerification.update({
+          where: { id: existing.id },
+          data: {
+            documents: [docPayload] as any,
+            estimatedCompletionDate,
+            status: 'under_review',
+          },
+        });
+      } else {
+        await tx.organisationVerification.create({
+          data: {
+            organisationId: organisation.id,
+            status: 'under_review',
+            documents: [docPayload] as any,
+            estimatedCompletionDate,
+          },
+        });
+      }
+    });
+
+    const updated = await this.prisma.organisation.findUnique({
+      where: { userId },
+    });
+
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'KYB Submitted',
+      details: 'Incorporation details submitted for verification review.',
+      level: 'info',
+    });
+
+    return {
+      success: true,
+      message:
+        'Incorporation details submitted successfully. Your organisation is now under review.',
+      data: {
+        verificationStatus: updated!.verificationStatus,
+        incorporationNumber: updated!.incorporationNumber,
+        countryOfIncorporation: updated!.countryOfIncorporation,
+        yearOfCommencement: updated!.yearOfCommencement,
       },
     };
   }
@@ -2889,6 +3370,12 @@ export class OrganisationService {
       },
     });
 
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Subscription Updated',
+      details: `Billing plan changed to ${plan}.`,
+      level: 'info',
+    });
+
     return {
       success: true,
       message: `Subscription updated to ${plan} plan successfully`,
@@ -2993,6 +3480,12 @@ export class OrganisationService {
       },
     });
 
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Billing Payment Initiated',
+      details: `Started bank transfer checkout for plan ${paymentDto.plan} (ref ${paymentReference}).`,
+      level: 'info',
+    });
+
     return {
       success: true,
       message: 'Payment initiated successfully',
@@ -3050,6 +3543,12 @@ export class OrganisationService {
       },
     });
 
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Wallet Top-up Initiated',
+      details: `Started bank transfer for ${ttkAmount} TTK (ref ${paymentReference}).`,
+      level: 'info',
+    });
+
     return {
       success: true,
       message: 'Wallet funding initiated',
@@ -3098,6 +3597,12 @@ export class OrganisationService {
           },
         },
       },
+    });
+
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Bank Transfer Submitted',
+      details: `Marked payment reference ${reference} as submitted for verification.`,
+      level: 'info',
     });
 
     return {
@@ -3181,6 +3686,12 @@ export class OrganisationService {
         status: 'draft',
         postedBy: userId,
       },
+    });
+
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Job Created',
+      details: `Created draft "${job.jobTitle}".`,
+      level: 'info',
     });
 
     return {
@@ -3268,10 +3779,456 @@ export class OrganisationService {
       },
     });
 
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Job Updated',
+      details: `Updated "${job.jobTitle}" (${jobId}).`,
+      level: 'info',
+    });
+
     return {
       success: true,
       message: 'Job updated successfully',
       data: job,
     };
+  }
+
+  async getSettingsRoles(userId: string) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+
+    const counts = await this.prisma.organisationMember.groupBy({
+      by: ['role'],
+      where: { organisationId: organisation.id },
+      _count: { _all: true },
+    });
+    const countMap = Object.fromEntries(
+      counts.map((c) => [c.role, c._count._all]),
+    ) as Record<string, number>;
+
+    const roles: Array<{
+      id: string;
+      kind: 'system' | 'custom';
+      roleKey: string | null;
+      name: string;
+      isSystem: boolean;
+      description: string;
+      memberCount: number;
+      permissionCount: number;
+      permissions: string[];
+    }> = [];
+
+    for (const roleKey of SETTINGS_ORG_ROLE_ORDER) {
+      const meta = SYSTEM_ROLE_DEFINITIONS[roleKey];
+      if (!meta) continue;
+      const memberCount =
+        roleKey === 'org_owner' ? 1 : countMap[roleKey] ?? 0;
+      roles.push({
+        id: roleKey,
+        kind: 'system',
+        roleKey,
+        name: meta.name,
+        isSystem: meta.isSystem,
+        description: meta.description,
+        memberCount,
+        permissionCount: meta.permissionCount,
+        permissions: [...meta.permissionKeys].map(formatPermissionLabel),
+      });
+    }
+
+    const customRows = await this.prisma.organisationCustomRole.findMany({
+      where: { organisationId: organisation.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    for (const row of customRows) {
+      const keys = Array.isArray(row.permissions)
+        ? (row.permissions as string[])
+        : [];
+      roles.push({
+        id: row.id,
+        kind: 'custom',
+        roleKey: null,
+        name: row.name,
+        isSystem: false,
+        description: row.description,
+        memberCount: 0,
+        permissionCount: keys.length,
+        permissions: keys.map(formatPermissionKeyForDisplay),
+      });
+    }
+
+    return {
+      success: true,
+      data: {
+        roles,
+        permissionCatalog: PERMISSION_CATALOG_SECTIONS,
+      },
+    };
+  }
+
+  async createOrganisationCustomRole(
+    userId: string,
+    dto: CreateOrganisationCustomRoleDto,
+  ) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+    if (!isValidGranularPermissionList(dto.permissions)) {
+      throw new BadRequestException(
+        'Invalid permissions: select at least one capability from the role catalog (e.g. jobs.create, applicants.view).',
+      );
+    }
+    const created = await this.prisma.organisationCustomRole.create({
+      data: {
+        organisationId: organisation.id,
+        name: dto.name.trim(),
+        description: (dto.description ?? '').trim(),
+        permissions: dto.permissions,
+      },
+    });
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Custom Role Created',
+      details: `Created role "${created.name}".`,
+      level: 'info',
+    });
+    return {
+      success: true,
+      message: 'Role created',
+      data: {
+        id: created.id,
+        kind: 'custom' as const,
+        roleKey: null,
+        name: created.name,
+        isSystem: false,
+        description: created.description,
+        memberCount: 0,
+        permissionCount: dto.permissions.length,
+        permissions: dto.permissions.map(formatPermissionKeyForDisplay),
+      },
+    };
+  }
+
+  async updateOrganisationCustomRole(
+    userId: string,
+    roleId: string,
+    dto: UpdateOrganisationCustomRoleDto,
+  ) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+    const existing = await this.prisma.organisationCustomRole.findFirst({
+      where: { id: roleId, organisationId: organisation.id },
+    });
+    if (!existing) {
+      throw new NotFoundException('Role not found');
+    }
+    if (
+      dto.name === undefined &&
+      dto.description === undefined &&
+      dto.permissions === undefined
+    ) {
+      throw new BadRequestException('No fields to update');
+    }
+    if (
+      dto.permissions !== undefined &&
+      !isValidCustomRolePermissionList(dto.permissions)
+    ) {
+      throw new BadRequestException(
+        'Invalid permissions: use granular keys (e.g. jobs.create) or legacy module keys (e.g. jobs).',
+      );
+    }
+    const updated = await this.prisma.organisationCustomRole.update({
+      where: { id: roleId },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.description !== undefined
+          ? { description: dto.description.trim() }
+          : {}),
+        ...(dto.permissions !== undefined ? { permissions: dto.permissions } : {}),
+      },
+    });
+    const keys = Array.isArray(updated.permissions)
+      ? (updated.permissions as string[])
+      : [];
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Custom Role Updated',
+      details: `Updated role "${updated.name}".`,
+      level: 'warning',
+    });
+    return {
+      success: true,
+      message: 'Role updated',
+      data: {
+        id: updated.id,
+        kind: 'custom' as const,
+        roleKey: null,
+        name: updated.name,
+        isSystem: false,
+        description: updated.description,
+        memberCount: 0,
+        permissionCount: keys.length,
+        permissions: keys.map(formatPermissionKeyForDisplay),
+      },
+    };
+  }
+
+  async deleteOrganisationCustomRole(userId: string, roleId: string) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+    const existing = await this.prisma.organisationCustomRole.findFirst({
+      where: { id: roleId, organisationId: organisation.id },
+    });
+    if (!existing) {
+      throw new NotFoundException('Role not found');
+    }
+    const roleName = existing.name;
+    await this.prisma.organisationCustomRole.delete({
+      where: { id: roleId },
+    });
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Custom Role Deleted',
+      details: `Deleted role "${roleName}".`,
+      level: 'warning',
+    });
+    return { success: true, message: 'Role deleted' };
+  }
+
+  async getSettingsIntegrations(userId: string) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+
+    const rows = await this.prisma.organisationIntegration.findMany({
+      where: { organisationId: organisation.id, connected: true },
+      select: { provider: true },
+    });
+    const connectedSet = new Set(rows.map((r) => r.provider));
+
+    const sections = INTEGRATION_CATALOG.map((sec) => ({
+      id: sec.id,
+      title: sec.title,
+      subtitle: sec.subtitle,
+      sectionIcon: sec.sectionIcon,
+      items: sec.items.map((it) => ({
+        provider: it.provider,
+        title: it.title,
+        description: it.description,
+        icon: it.icon,
+        connected: connectedSet.has(it.provider),
+      })),
+    }));
+
+    return { success: true, data: { sections } };
+  }
+
+  async connectIntegration(userId: string, provider: string) {
+    if (!isIntegrationProvider(provider)) {
+      throw new BadRequestException('Unknown integration provider');
+    }
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+
+    await this.prisma.organisationIntegration.upsert({
+      where: {
+        organisationId_provider: {
+          organisationId: organisation.id,
+          provider,
+        },
+      },
+      create: {
+        organisationId: organisation.id,
+        provider,
+        connected: true,
+        metadata: { linkedAt: new Date().toISOString() },
+      },
+      update: {
+        connected: true,
+        metadata: { linkedAt: new Date().toISOString() },
+      },
+    });
+
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Integration Connected',
+      details: `Connected ${provider.replace(/_/g, ' ')}.`,
+      level: 'success',
+    });
+
+    return this.getSettingsIntegrations(userId);
+  }
+
+  async disconnectIntegration(userId: string, provider: string) {
+    if (!isIntegrationProvider(provider)) {
+      throw new BadRequestException('Unknown integration provider');
+    }
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+
+    await this.prisma.organisationIntegration.updateMany({
+      where: { organisationId: organisation.id, provider },
+      data: { connected: false },
+    });
+
+    void this.logOrganisationActivityFromUser(organisation.id, userId, {
+      action: 'Integration Disconnected',
+      details: `Disconnected ${provider.replace(/_/g, ' ')}.`,
+      level: 'info',
+    });
+
+    return this.getSettingsIntegrations(userId);
+  }
+
+  async getSettingsActivityLog(
+    userId: string,
+    opts?: { page?: number; limit?: number },
+  ) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+
+    const page = Math.max(1, opts?.page ?? 1);
+    const limit = Math.min(100, Math.max(1, opts?.limit ?? 50));
+    const skip = (page - 1) * limit;
+
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.organisationActivityLog.count({
+        where: { organisationId: organisation.id },
+      }),
+      this.prisma.organisationActivityLog.findMany({
+        where: { organisationId: organisation.id },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    const entries = rows.map((r) => ({
+      id: r.id,
+      action: r.action,
+      user: r.actorName,
+      details: r.details,
+      type: r.level,
+      timestamp: r.createdAt.toISOString(),
+    }));
+
+    return {
+      success: true,
+      data: {
+        entries,
+        total,
+        page,
+        limit,
+      },
+    };
+  }
+
+  /** Append a row to the organisation activity log (call from other services or cron jobs). */
+  async recordOrganisationActivity(params: {
+    organisationId: string;
+    action: string;
+    actorName: string;
+    actorUserId?: string | null;
+    details: string;
+    level: 'success' | 'info' | 'warning' | 'error';
+  }) {
+    await this.prisma.organisationActivityLog.create({
+      data: {
+        organisationId: params.organisationId,
+        action: params.action,
+        actorName: params.actorName,
+        actorUserId: params.actorUserId ?? null,
+        details: params.details,
+        level: params.level,
+      },
+    });
+  }
+
+  private async logOrganisationActivityFromUser(
+    organisationId: string,
+    actorUserId: string,
+    event: {
+      action: string;
+      details: string;
+      level: 'success' | 'info' | 'warning' | 'error';
+    },
+  ) {
+    try {
+      const u = await this.prisma.user.findUnique({
+        where: { id: actorUserId },
+        select: { firstName: true, lastName: true, email: true },
+      });
+      const actorName =
+        u != null
+          ? `${(u.firstName ?? '').trim()} ${(u.lastName ?? '').trim()}`.trim() ||
+            u.email
+          : 'Unknown user';
+      await this.recordOrganisationActivity({
+        organisationId,
+        action: event.action,
+        actorName,
+        actorUserId,
+        details: event.details,
+        level: event.level,
+      });
+    } catch (e) {
+      console.warn('[organisation] activity log failed', e);
+    }
+  }
+
+  /** System actor — e.g. scheduled job closed a listing. */
+  async logOrganisationActivitySystem(
+    organisationId: string,
+    event: {
+      action: string;
+      details: string;
+      level: 'success' | 'info' | 'warning' | 'error';
+    },
+  ) {
+    try {
+      await this.recordOrganisationActivity({
+        organisationId,
+        action: event.action,
+        actorName: 'System',
+        actorUserId: null,
+        details: event.details,
+        level: event.level,
+      });
+    } catch (e) {
+      console.warn('[organisation] system activity log failed', e);
+    }
   }
 }

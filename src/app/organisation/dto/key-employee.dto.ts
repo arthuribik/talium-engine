@@ -1,4 +1,13 @@
-import { IsString, IsNotEmpty, IsOptional, IsEmail, IsUrl, MaxLength, ValidateIf } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsEmail,
+  MaxLength,
+  ValidateIf,
+  IsArray,
+  ArrayUnique,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateKeyEmployeeDto {
@@ -23,6 +32,7 @@ export class CreateKeyEmployeeDto {
   @ApiPropertyOptional({ description: 'Short bio', example: 'Visionary entrepreneur with 15+ years...' })
   @IsString()
   @IsOptional()
+  @MaxLength(4000)
   bio?: string;
 
   @ApiPropertyOptional({ description: 'Email address', example: 'john@trudium.com' })
@@ -31,9 +41,13 @@ export class CreateKeyEmployeeDto {
   @IsOptional()
   email?: string;
 
-  @ApiPropertyOptional({ description: 'LinkedIn profile URL' })
+  @ApiPropertyOptional({
+    description: 'LinkedIn URL or handle (https added automatically if omitted)',
+    example: 'linkedin.com/in/john',
+  })
   @ValidateIf((o) => o.linkedInUrl != null && o.linkedInUrl !== '')
-  @IsUrl()
+  @IsString()
+  @MaxLength(500)
   @IsOptional()
   linkedInUrl?: string;
 }
@@ -60,6 +74,7 @@ export class UpdateKeyEmployeeDto {
   @ApiPropertyOptional({ description: 'Short bio' })
   @IsString()
   @IsOptional()
+  @MaxLength(4000)
   bio?: string;
 
   @ApiPropertyOptional({ description: 'Email address' })
@@ -68,9 +83,22 @@ export class UpdateKeyEmployeeDto {
   @IsOptional()
   email?: string;
 
-  @ApiPropertyOptional({ description: 'LinkedIn profile URL' })
+  @ApiPropertyOptional({ description: 'LinkedIn URL or handle' })
   @ValidateIf((o) => o.linkedInUrl != null && o.linkedInUrl !== '')
-  @IsUrl()
+  @IsString()
+  @MaxLength(500)
   @IsOptional()
   linkedInUrl?: string;
+}
+
+export class ReorderKeyEmployeesDto {
+  @ApiProperty({
+    description: 'Ordered list of key employee IDs (every employee exactly once)',
+    type: [String],
+    example: ['clxyz1', 'clxyz2'],
+  })
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  employeeIds: string[];
 }

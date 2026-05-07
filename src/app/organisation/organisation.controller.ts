@@ -9,7 +9,11 @@ import {
   UseGuards,
   Request,
   Query,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiOperation,
@@ -17,11 +21,14 @@ import {
   ApiBearerAuth,
   ApiParam,
   ApiQuery,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../utility/jwt/jwt-auth.guard';
 import { OrganisationService } from './organisation.service';
 import { OrganisationSetupDto } from './dto/organisation-setup.dto';
 import { VerificationRequestDto } from './dto/verification-request.dto';
+import { KybIncorporationDto } from './dto/kyb-incorporation.dto';
 import { UpdateOrganisationProfileDto } from './dto/update-profile.dto';
 import { CreateJobDto } from '../job/dto/create-job.dto';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
@@ -30,7 +37,15 @@ import { ScoutSearchDto } from './dto/scout-search.dto';
 import { SendScoutRequestDto } from './dto/send-scout-request.dto';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
-import { CreateKeyEmployeeDto, UpdateKeyEmployeeDto } from './dto/key-employee.dto';
+import {
+  CreateKeyEmployeeDto,
+  UpdateKeyEmployeeDto,
+  ReorderKeyEmployeesDto,
+} from './dto/key-employee.dto';
+import {
+  CreateOrganisationCustomRoleDto,
+  UpdateOrganisationCustomRoleDto,
+} from './dto/organisation-custom-role.dto';
 
 @ApiTags('Organisation')
 @Controller('organisation')
@@ -61,6 +76,172 @@ export class OrganisationController {
     return this.organisationService.updateOrganisationProfile(
       req.user.userId,
       updateDto,
+    );
+  }
+
+  @Post('upload-logo')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Upload organisation logo (image → S3)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Logo uploaded' })
+  @ApiResponse({ status: 400, description: 'Invalid file' })
+  async uploadOrganisationLogo(
+    @Request() req,
+    @UploadedFile() file: { buffer?: Buffer; originalname?: string; mimetype?: string },
+  ) {
+    if (!file?.buffer) {
+      throw new BadRequestException('No file uploaded');
+    }
+    return this.organisationService.uploadOrganisationLogo(req.user.userId, {
+      buffer: file.buffer,
+      originalname: file.originalname ?? 'logo',
+      mimetype: file.mimetype,
+    });
+  }
+
+  @Delete('logo')
+  @ApiOperation({ summary: 'Remove organisation logo' })
+  @ApiResponse({ status: 200, description: 'Logo cleared' })
+  async deleteOrganisationLogo(@Request() req) {
+    return this.organisationService.deleteOrganisationLogo(req.user.userId);
+  }
+
+  @Get('settings/roles')
+  @ApiOperation({
+    summary: 'List organisation roles (system + custom) for Settings → Roles',
+  })
+  @ApiResponse({ status: 200, description: 'Roles retrieved' })
+  async getSettingsRoles(@Request() req) {
+    return this.organisationService.getSettingsRoles(req.user.userId);
+  }
+
+  @Post('settings/roles')
+  @ApiOperation({ summary: 'Create a custom organisation role' })
+  @ApiResponse({ status: 201, description: 'Role created' })
+  async createOrganisationCustomRole(
+    @Request() req,
+    @Body() dto: CreateOrganisationCustomRoleDto,
+  ) {
+    return this.organisationService.createOrganisationCustomRole(
+      req.user.userId,
+      dto,
+    );
+  }
+
+  @Put('settings/roles/:roleId')
+  @ApiOperation({ summary: 'Update a custom organisation role' })
+  @ApiParam({ name: 'roleId', description: 'Custom role id (cuid)' })
+  async updateOrganisationCustomRole(
+    @Request() req,
+    @Param('roleId') roleId: string,
+    @Body() dto: UpdateOrganisationCustomRoleDto,
+  ) {
+    return this.organisationService.updateOrganisationCustomRole(
+      req.user.userId,
+      roleId,
+      dto,
+    );
+  }
+
+  @Delete('settings/roles/:roleId')
+  @ApiOperation({ summary: 'Delete a custom organisation role' })
+  @ApiParam({ name: 'roleId', description: 'Custom role id (cuid)' })
+  async deleteOrganisationCustomRole(
+    @Request() req,
+    @Param('roleId') roleId: string,
+  ) {
+    return this.organisationService.deleteOrganisationCustomRole(
+      req.user.userId,
+      roleId,
+    );
+  }
+
+  @Get('settings/activity')
+  @ApiOperation({
+    summary: 'Organisation activity log (Settings → Activity Log)',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Max 100',
+    example: 50,
+  })
+  @ApiResponse({ status: 200, description: 'Activity entries retrieved' })
+  async getSettingsActivity(
+    @Request() req,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const p = page ? parseInt(page, 10) : 1;
+    const l = limit ? parseInt(limit, 10) : 50;
+    return this.organisationService.getSettingsActivityLog(req.user.userId, {
+      page: Number.isFinite(p) ? p : 1,
+      limit: Number.isFinite(l) ? l : 50,
+    });
+  }
+
+  @Get('settings/integrations')
+  @ApiOperation({ summary: 'Organisation integrations catalog and connection state' })
+  @ApiResponse({ status: 200, description: 'Sections with items and connected flags' })
+  async getSettingsIntegrations(@Request() req) {
+    return this.organisationService.getSettingsIntegrations(req.user.userId);
+  }
+
+  @Post('settings/integrations/:provider/connect')
+  @ApiOperation({
+    summary:
+      'Mark an integration as connected (OAuth placeholder — stores state only)',
+  })
+  @ApiParam({
+    name: 'provider',
+    description:
+      'google_calendar | calendly | microsoft_teams | zoom | slack | sap_successfactors | workday',
+  })
+  async connectIntegration(
+    @Request() req,
+    @Param('provider') provider: string,
+  ) {
+    return this.organisationService.connectIntegration(
+      req.user.userId,
+      provider,
+    );
+  }
+
+  @Delete('settings/integrations/:provider')
+  @ApiOperation({ summary: 'Disconnect an integration' })
+  @ApiParam({ name: 'provider', description: 'Same slugs as connect' })
+  async disconnectIntegration(
+    @Request() req,
+    @Param('provider') provider: string,
+  ) {
+    return this.organisationService.disconnectIntegration(
+      req.user.userId,
+      provider,
+    );
+  }
+
+  @Post('verification/kyb-incorporation')
+  @ApiOperation({
+    summary: 'Submit KYB incorporation details (moves organisation to under review)',
+  })
+  @ApiResponse({ status: 200, description: 'KYB details submitted successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid input or already verified' })
+  @ApiResponse({ status: 404, description: 'Organisation not found' })
+  async submitKybIncorporation(
+    @Request() req,
+    @Body() dto: KybIncorporationDto,
+  ) {
+    return this.organisationService.submitKybIncorporationDetails(
+      req.user.userId,
+      dto,
     );
   }
 
@@ -437,6 +618,21 @@ export class OrganisationController {
   @ApiResponse({ status: 404, description: 'Organisation not found' })
   async createKeyEmployee(@Request() req, @Body() body: CreateKeyEmployeeDto) {
     return this.organisationService.createKeyEmployee(req.user.userId, body);
+  }
+
+  @Put('employees/reorder')
+  @ApiOperation({ summary: 'Reorder key employees / associates' })
+  @ApiResponse({ status: 200, description: 'Order updated successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid id list' })
+  @ApiResponse({ status: 404, description: 'Organisation not found' })
+  async reorderKeyEmployees(
+    @Request() req,
+    @Body() body: ReorderKeyEmployeesDto,
+  ) {
+    return this.organisationService.reorderKeyEmployees(
+      req.user.userId,
+      body.employeeIds,
+    );
   }
 
   @Put('employees/:employeeId')

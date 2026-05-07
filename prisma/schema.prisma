@@ -38,6 +38,13 @@ enum OrgRole {
   org_member
 }
 
+enum OrganisationActivityLogLevel {
+  success
+  info
+  warning
+  error
+}
+
 enum VerificationStatus {
   pending
   under_review
@@ -127,6 +134,7 @@ model Organisation {
   industry               String?
   companySize            String?
   website                String?
+  logoUrl                String?
   description            String?
   verificationStatus     VerificationStatus @default(not_activated)
   setupCompleted         Boolean            @default(false)
@@ -143,8 +151,58 @@ model Organisation {
   keyEmployees         OrganisationKeyEmployee[]
   billingTransactions  OrganisationBillingTransaction[]
   organisationInvoices OrganisationInvoice[]
+  customRoles          OrganisationCustomRole[]
+  activityLogs         OrganisationActivityLog[]
+  integrations         OrganisationIntegration[]
 
   @@map("organisations")
+}
+
+model OrganisationIntegration {
+  id             String   @id @default(cuid())
+  organisationId String
+  provider       String
+  connected      Boolean  @default(false)
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, provider])
+  @@index([organisationId])
+  @@map("organisation_integrations")
+}
+
+model OrganisationActivityLog {
+  id               String                       @id @default(cuid())
+  organisationId String
+  action           String
+  actorName        String
+  actorUserId      String?
+  details          String                       @db.Text
+  level            OrganisationActivityLogLevel
+  createdAt        DateTime                     @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, createdAt])
+  @@map("organisation_activity_logs")
+}
+
+model OrganisationCustomRole {
+  id             String   @id @default(cuid())
+  organisationId String
+  name           String
+  description    String   @db.Text
+  permissions    Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId])
+  @@map("organisation_custom_roles")
 }
 
 enum BillingEntityType {
