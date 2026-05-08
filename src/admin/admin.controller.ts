@@ -26,6 +26,10 @@ import { CreateSuperAdminDto } from './dto/create-super-admin.dto';
 import { AuthService } from '../app/auth/auth.service';
 import { CreateBillingPlanDto } from './dto/create-billing-plan.dto';
 import { UpdateBillingPlanDto } from './dto/update-billing-plan.dto';
+import {
+  CreateAdminCustomRoleDto,
+  UpdateAdminCustomRoleDto,
+} from './dto/admin-custom-role.dto';
 
 @ApiTags('Admin')
 @Controller('admin')
@@ -89,6 +93,107 @@ export class AdminController {
   })
   async getDashboardStats(@Request() req) {
     return this.adminService.getDashboardStats();
+  }
+
+  @Get('team/permission-catalog')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Permission catalog + built-in role presets (platform admin roles UI)',
+  })
+  async getAdminTeamPermissionCatalog() {
+    return this.adminService.getAdminPlatformPermissionCatalog();
+  }
+
+  @Get('team/custom-roles')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List custom platform admin roles' })
+  async listAdminCustomRoles() {
+    return this.adminService.listAdminCustomRoles();
+  }
+
+  @Get('team/custom-roles/:roleId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiParam({ name: 'roleId', description: 'Custom admin role id' })
+  @ApiOperation({ summary: 'Get a custom platform admin role by id' })
+  async getAdminCustomRole(@Param('roleId') roleId: string) {
+    return this.adminService.getAdminCustomRole(roleId);
+  }
+
+  @Post('team/custom-roles')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create a custom platform admin role (super admin only)' })
+  async createAdminCustomRole(
+    @Request() req,
+    @Body() dto: CreateAdminCustomRoleDto,
+  ) {
+    return this.adminService.createAdminCustomRole(req.user.userId, dto);
+  }
+
+  @Put('team/custom-roles/:roleId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiParam({ name: 'roleId' })
+  @ApiOperation({ summary: 'Update a custom platform admin role (super admin only)' })
+  async updateAdminCustomRole(
+    @Request() req,
+    @Param('roleId') roleId: string,
+    @Body() dto: UpdateAdminCustomRoleDto,
+  ) {
+    return this.adminService.updateAdminCustomRole(req.user.userId, roleId, dto);
+  }
+
+  @Get('team/members/:userId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiParam({ name: 'userId', description: 'Admin user id' })
+  @ApiOperation({ summary: 'Get a single platform admin team member (profile + permissions)' })
+  async getAdminTeamMember(@Param('userId') userId: string) {
+    return this.adminService.getAdminTeamMember(userId);
+  }
+
+  @Get('team')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Platform admin team (directory + role summary)' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Search by first name, last name, or email',
+  })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['all', 'active', 'deactivated', 'suspended'],
+    description: 'Filter by account status',
+  })
+  @ApiQuery({
+    name: 'role',
+    required: false,
+    enum: ['all', 'super_admin', 'admin', 'support', 'auditor'],
+    description: 'Filter by admin role',
+  })
+  @ApiResponse({ status: 200, description: 'Team directory retrieved successfully' })
+  async getAdminTeam(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+    @Query('role') role?: string,
+  ) {
+    return this.adminService.getAdminTeam(
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 20,
+      search,
+      status || 'all',
+      role || 'all',
+    );
   }
 
   @Get('users')

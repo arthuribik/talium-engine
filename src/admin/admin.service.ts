@@ -8,15 +8,87 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
-import { BillingEntityType } from '@prisma/client';
+import { BillingEntityType, Prisma, type AdminRole } from '@prisma/client';
 import { PrismaService } from '../utility/prisma/prisma.service';
-import { InviteAdminDto } from './dto/invite-admin.dto';
+import {
+  AdminInviteAccessExpiry,
+  InviteAdminDto,
+} from './dto/invite-admin.dto';
+import {
+  CreateAdminCustomRoleDto,
+  UpdateAdminCustomRoleDto,
+} from './dto/admin-custom-role.dto';
 import { CompleteOnboardingDto } from './dto/complete-onboarding.dto';
+import {
+  ADMIN_PLATFORM_PERMISSION_CATALOG,
+  BUILTIN_ADMIN_TEAM_ROLE_PERMISSION_PRESETS,
+  formatAdminPlatformPermissionKey,
+  isValidAdminPlatformPermissionList,
+} from './admin-platform-permission-catalog.config';
 import { CreateBillingPlanDto } from './dto/create-billing-plan.dto';
 import { UpdateBillingPlanDto } from './dto/update-billing-plan.dto';
 import { ensureDefaultBillingPlans } from '../app/billing/billing-plans.seed';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AuthServiceEvents } from '../app/auth/auth.service';
+
+/** Display labels aligned with admin Team UI (Users table + Role Management). */
+const ADMIN_TEAM_ROLE_LABELS: Record<AdminRole, string> = {
+  super_admin: 'Super Admin',
+  admin: 'Operations',
+  support: 'Support Agent',
+  auditor: 'Finance',
+};
+
+/** Permission pills shown on /admin/team → Role Management (product spec). */
+const ADMIN_TEAM_ROLE_PERMISSIONS: Record<AdminRole, readonly string[]> = {
+  super_admin: [
+    'View All',
+    'Manage Users',
+    'Manage Roles',
+    'Billing Access',
+    'Verification Control',
+    'Job Management',
+    'Communications',
+    'Settings',
+  ],
+  admin: [
+    'View Professionals',
+    'View Organisations',
+    'Manage Verifications',
+    'Manage Jobs',
+    'View Transactions',
+  ],
+  support: [
+    'View Professionals',
+    'View Organisations',
+    'Create Communications',
+    'View Jobs',
+  ],
+  auditor: ['View Transactions', 'Manage Billing', 'Export Reports'],
+};
+
+/** Short copy for the role summary card on team member profile. */
+const ADMIN_TEAM_ROLE_SUMMARY_DESCRIPTION: Record<AdminRole, string> = {
+  super_admin:
+    'Full platform access including billing, verification, jobs, team, and settings.',
+  admin:
+    'Can manage professionals, organisations, verifications, and jobs across the platform.',
+  support:
+    'Can manage professionals, organisations and run verification reviews.',
+  auditor:
+    'Can view and export financial data, manage billing plans, and issue refunds where permitted.',
+};
+
+function adminTeamDisplayStatus(status: string): {
+  key: 'active' | 'deactivated' | 'suspended';
+  label: string;
+} {
+  if (status === 'SUSPENDED') return { key: 'suspended', label: 'Suspended' };
+  if (status === 'UNVERIFIED' || status === 'PENDING_INVITATION') {
+    return { key: 'deactivated', label: 'Deactivated' };
+  }
+  return { key: 'active', label: 'Active' };
+}
 
 @Injectable()
 export class AdminService {
@@ -28,7 +100,6 @@ export class AdminService {
   ) {}
 
   async inviteAdmin(userId: string, inviteAdminDto: InviteAdminDto) {
-    // Check if requester is super_admin
     const requester = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { adminProfile: true },
@@ -41,48 +112,93 @@ export class AdminService {
       throw new ForbiddenException('Only super admins can invite other admins');
     }
 
-    // Check if email exists
+    if (inviteAdminDto.role === 'super_admin') {
+      throw new BadRequestException(
+        'Super admin role cannot be assigned via invitation',
+      );
+    }
+
+    const full = inviteAdminDto.fullName?.trim();
+    let firstName = inviteAdminDto.firstName?.trim() ?? '';
+    let lastName = inviteAdminDto.lastName?.trim() ?? '';
+    if (full) {
+      const parts = full.split(/\s+/).filter(Boolean);
+      firstName = parts[0] ?? '';
+      lastName = parts.slice(1).join(' ').trim() || 'Member';
+    }
+    if (!firstName || !lastName) {
+      throw new BadRequestException('Please provide the invitee full name');
+    }
+
+    const email = inviteAdminDto.email.trim().toLowerCase();
+
     const existingUser = await this.prisma.user.findUnique({
-      where: { email: inviteAdminDto.email },
+      where: { email },
     });
 
     if (existingUser) {
       throw new ConflictException('Email already exists');
     }
 
-    // Generate invitation token
     const invitationToken = this.generateToken();
-    const invitationExpiresAt = new Date();
-    invitationExpiresAt.setDate(invitationExpiresAt.getDate() + 7);
+    const expirySetting =
+      inviteAdminDto.accessExpiry ?? AdminInviteAccessExpiry.days_7;
+    let invitationExpiresAt: Date | null = null;
+    if (expirySetting !== AdminInviteAccessExpiry.none) {
+      const days =
+        expirySetting === AdminInviteAccessExpiry.days_14
+          ? 14
+          : expirySetting === AdminInviteAccessExpiry.days_30
+            ? 30
+            : 7;
+      invitationExpiresAt = new Date();
+      invitationExpiresAt.setDate(invitationExpiresAt.getDate() + days);
+    }
 
-    // Create user
     const user = await this.prisma.user.create({
       data: {
-        email: inviteAdminDto.email,
-        firstName: inviteAdminDto.firstName,
-        lastName: inviteAdminDto.lastName,
-        password: '', // Will be set during onboarding
+        email,
+        firstName,
+        lastName,
+        password: '',
         userType: 'ADMIN',
         status: 'PENDING_INVITATION',
         emailVerified: false,
       },
     });
 
-    // Create admin profile with explicit role assignment
-    // Ensure role is properly set (not default)
     const adminRole = inviteAdminDto.role || 'admin';
     const admin = await this.prisma.admin.create({
       data: {
         userId: user.id,
-        role: adminRole as any, // Explicitly set the role from DTO
+        role: adminRole as AdminRole,
         invitationToken,
         invitationExpiresAt,
         invitationSentAt: new Date(),
       },
     });
 
-    // TODO: Send invitation email
-    console.log(`Invitation token: ${invitationToken}`);
+    const baseUrl =
+      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
+    const acceptUrl = `${baseUrl.replace(/\/$/, '')}/admin/accept-invite?token=${encodeURIComponent(invitationToken)}`;
+    const roleLabel = ADMIN_TEAM_ROLE_LABELS[admin.role] ?? admin.role;
+    const personal = inviteAdminDto.personalMessage?.trim();
+    const inviterName = `${requester.firstName} ${requester.lastName}`.trim();
+
+    const html = this.buildAdminInviteEmailHtml({
+      firstName,
+      acceptUrl,
+      roleLabel,
+      inviterName,
+      personalMessage: personal,
+      expiresAt: invitationExpiresAt,
+    });
+
+    this.eventEmitter.emit(AuthServiceEvents.SEND_VERIFICATION_EMAIL, {
+      to: email,
+      subject: `You’re invited to the Taldium admin team (${roleLabel})`,
+      html,
+    });
 
     return {
       success: true,
@@ -97,6 +213,55 @@ export class AdminService {
     };
   }
 
+  private escapeHtml(text: string): string {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  private buildAdminInviteEmailHtml(params: {
+    firstName: string;
+    acceptUrl: string;
+    roleLabel: string;
+    inviterName: string;
+    personalMessage?: string;
+    expiresAt: Date | null;
+  }): string {
+    const expiryLine = params.expiresAt
+      ? `This invitation expires on <strong>${params.expiresAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</strong>.`
+      : 'This invitation does not expire until it is used or revoked.';
+
+    const noteBlock = params.personalMessage
+      ? `<table width="100%" cellpadding="12" cellspacing="0" border="1" bordercolor="#cfe8ff" style="margin:16px 0;background:#f0f8ff;">
+          <tr><td><strong>Message from ${this.escapeHtml(params.inviterName)}</strong><br/><span style="white-space:pre-wrap;">${this.escapeHtml(params.personalMessage)}</span></td></tr>
+        </table>`
+      : '';
+
+    return `
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:system-ui,-apple-system,sans-serif;color:#111;">
+  <tr><td align="center" style="padding:24px 12px;">
+    <table width="560" cellpadding="0" cellspacing="0" border="0">
+      <tr><td style="padding-bottom:8px;"><h1 style="font-size:20px;margin:0;">Hi ${this.escapeHtml(params.firstName)},</h1></td></tr>
+      <tr><td style="padding-bottom:16px;line-height:1.5;">
+        <p style="margin:0 0 12px;">${this.escapeHtml(params.inviterName)} has invited you to join the <strong>Taldium</strong> platform admin team as <strong>${this.escapeHtml(params.roleLabel)}</strong>.</p>
+        <p style="margin:0 0 12px;">Use the button below to set your password and complete onboarding before you can sign in.</p>
+        <p style="margin:0;font-size:14px;color:#444;">${expiryLine}</p>
+      </td></tr>
+      ${noteBlock}
+      <tr><td style="padding:8px 0 24px;">
+        <a href="${params.acceptUrl}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;">Accept invitation</a>
+      </td></tr>
+      <tr><td style="font-size:13px;color:#666;line-height:1.5;">
+        If the button does not work, copy and paste this link into your browser:<br/>
+        <span style="word-break:break-all;">${this.escapeHtml(params.acceptUrl)}</span>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>`;
+  }
+
   async completeOnboarding(completeOnboardingDto: CompleteOnboardingDto) {
     if (
       completeOnboardingDto.password !== completeOnboardingDto.confirmPassword
@@ -104,13 +269,13 @@ export class AdminService {
       throw new BadRequestException('Passwords do not match');
     }
 
-    // Find admin by invitation token
     const admin = await this.prisma.admin.findFirst({
       where: {
         invitationToken: completeOnboardingDto.invitationToken,
-        invitationExpiresAt: {
-          gt: new Date(),
-        },
+        OR: [
+          { invitationExpiresAt: null },
+          { invitationExpiresAt: { gt: new Date() } },
+        ],
       },
       include: { user: true },
     });
@@ -703,6 +868,378 @@ export class AdminService {
         },
       },
     };
+  }
+
+  /**
+   * Platform admin team directory (users with ADMIN type and an admin profile).
+   * Supports search by name/email and filters by account status and admin role.
+   */
+  async getAdminTeam(
+    page: number = 1,
+    limit: number = 20,
+    search?: string,
+    statusFilter: string = 'all',
+    roleFilter: string = 'all',
+  ) {
+    const skip = (page - 1) * limit;
+    const q = search?.trim();
+    const andClauses: Prisma.UserWhereInput[] = [
+      { userType: 'ADMIN' },
+      { adminProfile: { isNot: null } },
+    ];
+
+    if (statusFilter && statusFilter !== 'all') {
+      if (statusFilter === 'active') {
+        andClauses.push({ status: { in: ['ACTIVE', 'VERIFIED'] } });
+      } else if (statusFilter === 'deactivated') {
+        andClauses.push({
+          status: { in: ['UNVERIFIED', 'PENDING_INVITATION'] },
+        });
+      } else if (statusFilter === 'suspended') {
+        andClauses.push({ status: 'SUSPENDED' });
+      }
+    }
+
+    if (roleFilter && roleFilter !== 'all') {
+      andClauses.push({
+        adminProfile: { is: { role: roleFilter as AdminRole } },
+      });
+    }
+
+    if (q) {
+      andClauses.push({
+        OR: [
+          { firstName: { contains: q, mode: 'insensitive' } },
+          { lastName: { contains: q, mode: 'insensitive' } },
+          { email: { contains: q, mode: 'insensitive' } },
+        ],
+      });
+    }
+
+    const where: Prisma.UserWhereInput = { AND: andClauses };
+
+    const adminRoles: AdminRole[] = [
+      'super_admin',
+      'admin',
+      'support',
+      'auditor',
+    ];
+
+    const [users, total, roleSummaries] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          adminProfile: { select: { role: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.user.count({ where }),
+      Promise.all(
+        adminRoles.map(async (role) => ({
+          key: role,
+          label: ADMIN_TEAM_ROLE_LABELS[role],
+          memberCount: await this.prisma.user.count({
+            where: {
+              userType: 'ADMIN',
+              adminProfile: { is: { role } },
+            },
+          }),
+        })),
+      ),
+    ]);
+
+    return {
+      success: true,
+      data: {
+        members: users.map((u) => {
+          const role = u.adminProfile?.role as AdminRole | undefined;
+          const roleLabel = role ? ADMIN_TEAM_ROLE_LABELS[role] : '—';
+          const displayStatus = adminTeamDisplayStatus(u.status);
+          return {
+            id: u.id,
+            email: u.email,
+            firstName: u.firstName,
+            lastName: u.lastName,
+            adminRole: role ?? null,
+            roleLabel,
+            status: u.status,
+            displayStatus,
+            dateJoined: u.createdAt,
+            lastActive: u.updatedAt,
+          };
+        }),
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.max(1, Math.ceil(total / limit)),
+        },
+        roleSummaries: roleSummaries.map((r) => ({
+          ...r,
+          permissions: [...ADMIN_TEAM_ROLE_PERMISSIONS[r.key as AdminRole]],
+        })),
+        customRoles: await this.listAdminCustomRolesForTeam(),
+      },
+    };
+  }
+
+  /**
+   * Single platform admin team member for profile / permissions UI.
+   */
+  async getAdminTeamMember(memberUserId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: memberUserId,
+        userType: 'ADMIN',
+        adminProfile: { isNot: null },
+      },
+      include: { adminProfile: true },
+    });
+
+    if (!user?.adminProfile) {
+      throw new NotFoundException('Team member not found');
+    }
+
+    const role = user.adminProfile.role as AdminRole;
+    const presetKeys = BUILTIN_ADMIN_TEAM_ROLE_PERMISSION_PRESETS[role] ?? [];
+    const preset = new Set(presetKeys);
+
+    const permissionSections = ADMIN_PLATFORM_PERMISSION_CATALOG.map((section) => ({
+      id: section.id,
+      title: section.title,
+      icon: section.icon,
+      items: section.items.map((item) => ({
+        key: item.key,
+        label: item.label,
+        enabled: preset.has(item.key),
+      })),
+    }));
+
+    const displayStatus = adminTeamDisplayStatus(user.status);
+    const roleLabel = ADMIN_TEAM_ROLE_LABELS[role];
+
+    let accessExpiryLabel = 'No expiry';
+    if (
+      user.status === 'PENDING_INVITATION' &&
+      user.adminProfile.invitationExpiresAt
+    ) {
+      accessExpiryLabel = user.adminProfile.invitationExpiresAt.toLocaleDateString(
+        'en-GB',
+        { day: 'numeric', month: 'long', year: 'numeric' },
+      );
+    }
+
+    const adminActivityLogDemo = [
+      {
+        id: 'al-demo-1',
+        level: 'success' as const,
+        title:
+          'Approved verification request VER-00041 (Amara Okonkwo — ID Verification)',
+        at: new Date('2026-04-22T09:21:00.000Z').toISOString(),
+      },
+      {
+        id: 'al-demo-2',
+        level: 'info' as const,
+        title: 'Reviewed and updated profile for Chidera Eze (PRO-00002)',
+        at: new Date('2026-04-21T15:44:00.000Z').toISOString(),
+      },
+      {
+        id: 'al-demo-3',
+        level: 'warning' as const,
+        title: 'Flagged verification request VER-00038 for senior review',
+        at: new Date('2026-04-20T11:10:00.000Z').toISOString(),
+      },
+      {
+        id: 'al-demo-4',
+        level: 'error' as const,
+        title:
+          'Rejected KYB submission for Bogus Services Inc — insufficient documentation',
+        at: new Date('2026-04-18T14:30:00.000Z').toISOString(),
+      },
+      {
+        id: 'al-demo-5',
+        level: 'info' as const,
+        title: 'Ran KYB check on Greenfield Farms (ORG-00004)',
+        at: new Date('2026-04-17T10:00:00.000Z').toISOString(),
+      },
+    ];
+
+    return {
+      success: true,
+      data: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        adminRole: role,
+        roleLabel,
+        status: user.status,
+        displayStatus,
+        dateJoined: user.createdAt,
+        lastActive: user.updatedAt,
+        twoFactorEnabled: user.twoFactorEnabled,
+        accessExpiryLabel,
+        roleSummary: {
+          key: role,
+          label: roleLabel,
+          description: ADMIN_TEAM_ROLE_SUMMARY_DESCRIPTION[role],
+        },
+        permissionSections,
+        activityLog: {
+          items: adminActivityLogDemo,
+          total: adminActivityLogDemo.length,
+          isPlaceholder: true,
+        },
+        activitySummary: {
+          verificationsReviewed: 312,
+          approvals: 287,
+          rejections: 25,
+          kybChecksRun: 48,
+          profilesEdited: 19,
+          logins30d: 28,
+          isPlaceholder: true,
+        },
+        sessionInfo: {
+          activeSessions: 3,
+          lastIp: '102.88.64.201',
+          device: 'Chrome · macOS',
+          location: 'Lagos, Nigeria',
+          isPlaceholder: true,
+        },
+      },
+    };
+  }
+
+  private async assertSuperAdmin(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { adminProfile: true },
+    });
+    if (!user?.adminProfile || user.adminProfile.role !== 'super_admin') {
+      throw new ForbiddenException('Only super admins can manage platform roles');
+    }
+    return user;
+  }
+
+  getAdminPlatformPermissionCatalog() {
+    const builtinRolePresets = Object.fromEntries(
+      Object.entries(BUILTIN_ADMIN_TEAM_ROLE_PERMISSION_PRESETS).map(([k, v]) => [
+        k,
+        [...v],
+      ]),
+    );
+    return {
+      success: true,
+      data: {
+        sections: ADMIN_PLATFORM_PERMISSION_CATALOG,
+        builtinRolePresets,
+      },
+    };
+  }
+
+  async listAdminCustomRolesForTeam() {
+    const rows = await this.prisma.adminCustomRole.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map((r) => {
+      const keys = Array.isArray(r.permissions)
+        ? (r.permissions as unknown as string[])
+        : [];
+      return {
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        permissionCount: keys.length,
+        permissions: keys.map((k) => formatAdminPlatformPermissionKey(k)),
+      };
+    });
+  }
+
+  async listAdminCustomRoles() {
+    return {
+      success: true,
+      data: { roles: await this.listAdminCustomRolesForTeam() },
+    };
+  }
+
+  async getAdminCustomRole(roleId: string) {
+    const row = await this.prisma.adminCustomRole.findUnique({
+      where: { id: roleId },
+    });
+    if (!row) {
+      throw new NotFoundException('Role not found');
+    }
+    const keys = Array.isArray(row.permissions)
+      ? (row.permissions as unknown as string[])
+      : [];
+    return {
+      success: true,
+      data: {
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        permissions: keys,
+      },
+    };
+  }
+
+  async createAdminCustomRole(userId: string, dto: CreateAdminCustomRoleDto) {
+    await this.assertSuperAdmin(userId);
+    if (!isValidAdminPlatformPermissionList(dto.permissions)) {
+      throw new BadRequestException('Invalid permission keys for custom role');
+    }
+    const created = await this.prisma.adminCustomRole.create({
+      data: {
+        name: dto.name.trim(),
+        description: (dto.description ?? '').trim(),
+        permissions: dto.permissions,
+      },
+    });
+    return {
+      success: true,
+      message: 'Role created',
+      data: { id: created.id },
+    };
+  }
+
+  async updateAdminCustomRole(
+    userId: string,
+    roleId: string,
+    dto: UpdateAdminCustomRoleDto,
+  ) {
+    await this.assertSuperAdmin(userId);
+    const existing = await this.prisma.adminCustomRole.findUnique({
+      where: { id: roleId },
+    });
+    if (!existing) {
+      throw new NotFoundException('Role not found');
+    }
+    if (
+      dto.name === undefined &&
+      dto.description === undefined &&
+      dto.permissions === undefined
+    ) {
+      throw new BadRequestException('No fields to update');
+    }
+    if (
+      dto.permissions !== undefined &&
+      !isValidAdminPlatformPermissionList(dto.permissions)
+    ) {
+      throw new BadRequestException('Invalid permission keys for custom role');
+    }
+    await this.prisma.adminCustomRole.update({
+      where: { id: roleId },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.description !== undefined
+          ? { description: (dto.description ?? '').trim() }
+          : {}),
+        ...(dto.permissions !== undefined ? { permissions: dto.permissions } : {}),
+      },
+    });
+    return { success: true, message: 'Role updated' };
   }
 
   async getAllOrganisations(page: number = 1, limit: number = 20) {

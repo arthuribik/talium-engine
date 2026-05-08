@@ -1,5 +1,13 @@
-import { IsEmail, IsString, IsNotEmpty, IsEnum } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import {
+  IsEmail,
+  IsString,
+  IsNotEmpty,
+  IsEnum,
+  IsOptional,
+  MaxLength,
+  ValidateIf,
+} from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export enum AdminRoleEnum {
   super_admin = 'super_admin',
@@ -8,16 +16,37 @@ export enum AdminRoleEnum {
   auditor = 'auditor',
 }
 
-export class InviteAdminDto {
-  @ApiProperty()
-  @IsString()
-  @IsNotEmpty()
-  firstName: string;
+/** Invitation link validity (stored on `Admin.invitationExpiresAt`). */
+export enum AdminInviteAccessExpiry {
+  none = 'none',
+  days_7 = '7d',
+  days_14 = '14d',
+  days_30 = '30d',
+}
 
-  @ApiProperty()
+export class InviteAdminDto {
+  @ApiPropertyOptional({
+    description:
+      'Single full name (e.g. from team drawer). If set, firstName/lastName are derived.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  fullName?: string;
+
+  @ApiPropertyOptional()
+  @ValidateIf((o) => !o.fullName?.trim())
   @IsString()
   @IsNotEmpty()
-  lastName: string;
+  @MaxLength(120)
+  firstName?: string;
+
+  @ApiPropertyOptional()
+  @ValidateIf((o) => !o.fullName?.trim())
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  lastName?: string;
 
   @ApiProperty()
   @IsEmail()
@@ -28,4 +57,17 @@ export class InviteAdminDto {
   @IsEnum(AdminRoleEnum)
   @IsNotEmpty()
   role: AdminRoleEnum;
+
+  @ApiPropertyOptional({
+    description: 'Optional note included in the invitation email body.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  personalMessage?: string;
+
+  @ApiPropertyOptional({ enum: AdminInviteAccessExpiry })
+  @IsOptional()
+  @IsEnum(AdminInviteAccessExpiry)
+  accessExpiry?: AdminInviteAccessExpiry;
 }

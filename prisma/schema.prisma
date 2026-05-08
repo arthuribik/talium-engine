@@ -121,6 +121,17 @@ model Admin {
   @@map("admins")
 }
 
+model AdminCustomRole {
+  id            String   @id @default(cuid())
+  name          String
+  description   String   @db.Text
+  permissions   Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("admin_custom_roles")
+}
+
 model Organisation {
   id                     String             @id @default(cuid())
   userId                 String             @unique
