@@ -165,8 +165,40 @@ model Organisation {
   customRoles          OrganisationCustomRole[]
   activityLogs         OrganisationActivityLog[]
   integrations         OrganisationIntegration[]
+  talentScouts         OrganisationTalentScout[]
 
   @@map("organisations")
+}
+
+model OrganisationTalentScout {
+  id               String   @id @default(cuid())
+  organisationId   String
+  name             String
+  criteria         Json
+  matchCount       Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organisation Organisation                     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  matches      OrganisationTalentScoutMatch[]
+
+  @@index([organisationId])
+  @@map("organisation_talent_scouts")
+}
+
+model OrganisationTalentScoutMatch {
+  id               String   @id @default(cuid())
+  scoutId          String
+  professionalId   String
+  sortOrder        Int      @default(0)
+  createdAt        DateTime @default(now())
+
+  scout        OrganisationTalentScout @relation(fields: [scoutId], references: [id], onDelete: Cascade)
+  professional Professional            @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+
+  @@unique([scoutId, professionalId])
+  @@index([scoutId])
+  @@map("organisation_talent_scout_matches")
 }
 
 model OrganisationIntegration {
@@ -388,6 +420,7 @@ model Professional {
   savedJobs            SavedJob[]
   jobSettings          ProfessionalJobSettings?
   profileEditRequests  ProfessionalProfileEditRequest[]
+  talentScoutMatches   OrganisationTalentScoutMatch[]
 
   @@map("professionals")
 }

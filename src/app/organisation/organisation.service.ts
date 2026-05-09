@@ -1799,25 +1799,9 @@ export class OrganisationService {
     return {
       success: true,
       data: {
-        professionals: pageSlice.map((prof) => ({
-          id: prof.id,
-          userId: prof.userId,
-          name: `${prof.user.firstName || ''} ${prof.user.lastName || ''}`.trim() || prof.user.email,
-          email: prof.user.email,
-          nationality: getNationality(prof),
-          location: {
-            city: prof.workExperience?.[0]?.location
-              ? (prof.workExperience[0].location as any).city || null
-              : null,
-            country: prof.country || null,
-          },
-          profession: prof.profession || 'Not specified',
-          yearsOfExperience: prof.yearsOfExperience,
-          verificationStatus: getVerificationStatus(prof),
-          profileCompleteness: prof.profileCompleteness || 0,
-          identityStatus: prof.identityStatus,
-          user: prof.user,
-        })),
+        professionals: pageSlice.map((prof) =>
+          this.mapProfessionalToOrganisationDirectoryRow(prof, getNationality, getVerificationStatus),
+        ),
         pagination: {
           page,
           limit,
@@ -1828,33 +1812,385 @@ export class OrganisationService {
     };
   }
 
-  async scoutSearch(userId: string, dto: {
+  private mapProfessionalToOrganisationDirectoryRow(
+    prof: any,
+    getNationality: (p: any) => string | null,
+    getVerificationStatus: (p: any) => { percentage: number; status: string },
+  ) {
+    return {
+      id: prof.id,
+      userId: prof.userId,
+      name: `${prof.user.firstName || ''} ${prof.user.lastName || ''}`.trim() || prof.user.email,
+      email: prof.user.email,
+      nationality: getNationality(prof),
+      location: {
+        city: prof.workExperience?.[0]?.location
+          ? (prof.workExperience[0].location as any).city || null
+          : null,
+        country: prof.country || null,
+      },
+      profession: prof.profession || 'Not specified',
+      yearsOfExperience: prof.yearsOfExperience,
+      verificationStatus: getVerificationStatus(prof),
+      profileCompleteness: prof.profileCompleteness || 0,
+      identityStatus: prof.identityStatus,
+      user: prof.user,
+    };
+  }
+
+  private enrichProfessionalWithRoleAndTenure(prof: any) {
+    let yearsOfExperience = 0;
+    if (prof.workExperience && prof.workExperience.length > 0) {
+      const earliestStart = prof.workExperience.reduce((earliest: Date | null, exp: any) => {
+        const startDate = new Date(exp.startDate);
+        return !earliest || startDate < earliest ? startDate : earliest;
+      }, null as Date | null);
+
+      if (earliestStart) {
+        const endDate = prof.workExperience.some((exp: any) => exp.currentlyWorking)
+          ? new Date()
+          : prof.workExperience.reduce((latest: Date | null, exp: any) => {
+              const ed = exp.endDate ? new Date(exp.endDate) : new Date();
+              return !latest || ed > latest ? ed : latest;
+            }, null as Date | null) || new Date();
+
+        yearsOfExperience = Math.floor(
+          (endDate.getTime() - earliestStart.getTime()) / (1000 * 60 * 60 * 24 * 365),
+        );
+      }
+    }
+    const profession =
+      prof.workExperience && prof.workExperience.length > 0
+        ? prof.workExperience[prof.workExperience.length - 1].role
+        : null;
+    return { ...prof, yearsOfExperience, profession };
+  }
+
+  private mapRawProfessionalToDirectoryListing(prof: any) {
+    const getNationality = (p: any) => {
+      if (p.nationality) return p.nationality;
+      const c = (p.country || '').trim();
+      if (!c) return null;
+      const map: Record<string, string> = {
+        Nigeria: 'Nigerian',
+        'United States': 'American',
+        USA: 'American',
+        Germany: 'German',
+        'United Kingdom': 'British',
+        UK: 'British',
+        India: 'Indian',
+        Japan: 'Japanese',
+        Mexico: 'Mexican',
+        'United Arab Emirates': 'Emirati',
+        UAE: 'Emirati',
+      };
+      return map[c] || c;
+    };
+    const getVerificationStatus = (p: any) => {
+      const completeness = Math.min(100, p.profileCompleteness || 0);
+      if (p.identityStatus === 'verified') {
+        return { percentage: Math.max(completeness, 100), status: 'Verified with Gov ID' };
+      } else if (completeness >= 30) {
+        return { percentage: completeness, status: 'Self Declared' };
+      } else {
+        return { percentage: completeness || 20, status: 'Pending' };
+      }
+    };
+    const enriched = this.enrichProfessionalWithRoleAndTenure(prof);
+    return this.mapProfessionalToOrganisationDirectoryRow(
+      enriched,
+      getNationality,
+      getVerificationStatus,
+    );
+  }
+
+  private scoutSearchFilterParams(dto: {
     jobTitle?: string;
     searchType?: 'strict' | 'partial' | 'fuzzy';
     location?: string;
     domicile?: string;
-    workMode?: string;
-    employmentType?: string;
-    currency?: string;
-    salaryMin?: number;
-    salaryMax?: number;
-    benefits?: string[];
-    description?: string;
   }) {
-    const country = dto.location && dto.location.toLowerCase() !== 'global' ? dto.location : undefined;
+    const country =
+      dto.location && dto.location.toLowerCase() !== 'global' ? dto.location : undefined;
     let city: string | undefined;
     if (dto.domicile && dto.domicile.trim()) {
       const parts = dto.domicile.split(',').map((p) => p.trim()).filter(Boolean);
-      city = parts[0]; // e.g. "Lagos" from "Lagos, Nigeria"
+      city = parts[0];
     }
-    return this.searchProfessionals(userId, {
+    return {
       page: 1,
       limit: 100,
       jobTitle: dto.jobTitle,
-      searchType: dto.searchType || 'partial',
+      searchType: (dto.searchType || 'partial') as 'strict' | 'partial' | 'fuzzy',
       country,
       city,
+    };
+  }
+
+  async scoutSearch(
+    userId: string,
+    dto: {
+      jobTitle?: string;
+      searchType?: 'strict' | 'partial' | 'fuzzy';
+      location?: string;
+      domicile?: string;
+      workMode?: string;
+      employmentType?: string;
+      currency?: string;
+      salaryMin?: number;
+      salaryMax?: number;
+      benefits?: string[];
+      description?: string;
+      salaryPeriod?: string;
+      name?: string;
+    },
+  ) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
     });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+
+    const searchResult = await this.searchProfessionals(
+      userId,
+      this.scoutSearchFilterParams(dto),
+    );
+
+    const professionals = searchResult.data.professionals as { id: string }[];
+    const displayName =
+      (dto.name && dto.name.trim()) ||
+      [dto.jobTitle, dto.location].filter((x) => x && String(x).trim()).join(' · ') ||
+      'Scout list';
+
+    const criteriaPayload = { ...dto };
+
+    const scout = await this.prisma.$transaction(async (tx) => {
+      const s = await tx.organisationTalentScout.create({
+        data: {
+          organisationId: organisation.id,
+          name: displayName,
+          criteria: criteriaPayload as Prisma.InputJsonValue,
+          matchCount: professionals.length,
+        },
+      });
+      if (professionals.length > 0) {
+        await tx.organisationTalentScoutMatch.createMany({
+          data: professionals.map((row, i) => ({
+            scoutId: s.id,
+            professionalId: row.id,
+            sortOrder: i,
+          })),
+        });
+      }
+      return s;
+    });
+
+    return {
+      success: true,
+      data: {
+        ...searchResult.data,
+        scout: {
+          id: scout.id,
+          name: scout.name,
+          matchCount: scout.matchCount,
+          createdAt: scout.createdAt.toISOString(),
+          criteria: scout.criteria,
+        },
+      },
+    };
+  }
+
+  async listTalentScouts(userId: string) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+    const rows = await this.prisma.organisationTalentScout.findMany({
+      where: { organisationId: organisation.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    return {
+      success: true,
+      data: {
+        scouts: rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          matchCount: r.matchCount,
+          criteria: r.criteria,
+          createdAt: r.createdAt.getTime(),
+        })),
+      },
+    };
+  }
+
+  async getTalentScoutDetail(userId: string, scoutId: string) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+    const scout = await this.prisma.organisationTalentScout.findFirst({
+      where: { id: scoutId, organisationId: organisation.id },
+      include: {
+        matches: {
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            professional: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    email: true,
+                    firstName: true,
+                    lastName: true,
+                    status: true,
+                  },
+                },
+                identityVerification: true,
+                workExperience: {
+                  orderBy: { startDate: 'asc' },
+                },
+                education: {
+                  take: 1,
+                  orderBy: { createdAt: 'desc' },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!scout) {
+      throw new NotFoundException('Scout list not found');
+    }
+    const professionals = scout.matches.map((m) =>
+      this.mapRawProfessionalToDirectoryListing(m.professional as any),
+    );
+    const total = professionals.length;
+    return {
+      success: true,
+      data: {
+        scout: {
+          id: scout.id,
+          name: scout.name,
+          matchCount: scout.matchCount,
+          criteria: scout.criteria,
+          createdAt: scout.createdAt.toISOString(),
+        },
+        professionals,
+        pagination: {
+          page: 1,
+          limit: Math.max(total, 1),
+          total,
+          totalPages: 1,
+        },
+      },
+    };
+  }
+
+  async deleteTalentScout(userId: string, scoutId: string) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+    const res = await this.prisma.organisationTalentScout.deleteMany({
+      where: { id: scoutId, organisationId: organisation.id },
+    });
+    if (res.count === 0) {
+      throw new NotFoundException('Scout list not found');
+    }
+    return { success: true, data: { deleted: true } };
+  }
+
+  async updateTalentScout(
+    userId: string,
+    scoutId: string,
+    dto: {
+      jobTitle?: string;
+      searchType?: 'strict' | 'partial' | 'fuzzy';
+      location?: string;
+      domicile?: string;
+      workMode?: string;
+      employmentType?: string;
+      currency?: string;
+      salaryMin?: number;
+      salaryMax?: number;
+      benefits?: string[];
+      description?: string;
+      salaryPeriod?: string;
+      name?: string;
+    },
+  ) {
+    const organisation = await this.prisma.organisation.findUnique({
+      where: { userId },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found');
+    }
+    const existing = await this.prisma.organisationTalentScout.findFirst({
+      where: { id: scoutId, organisationId: organisation.id },
+    });
+    if (!existing) {
+      throw new NotFoundException('Scout list not found');
+    }
+
+    const searchResult = await this.searchProfessionals(
+      userId,
+      this.scoutSearchFilterParams(dto),
+    );
+    const professionals = searchResult.data.professionals as { id: string }[];
+    const displayName =
+      (dto.name && dto.name.trim()) ||
+      [dto.jobTitle, dto.location].filter((x) => x && String(x).trim()).join(' · ') ||
+      existing.name;
+
+    const criteriaPayload = { ...dto };
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.organisationTalentScoutMatch.deleteMany({ where: { scoutId } });
+      await tx.organisationTalentScout.update({
+        where: { id: scoutId },
+        data: {
+          name: displayName,
+          criteria: criteriaPayload as Prisma.InputJsonValue,
+          matchCount: professionals.length,
+        },
+      });
+      if (professionals.length > 0) {
+        await tx.organisationTalentScoutMatch.createMany({
+          data: professionals.map((row, i) => ({
+            scoutId,
+            professionalId: row.id,
+            sortOrder: i,
+          })),
+        });
+      }
+    });
+
+    const scout = await this.prisma.organisationTalentScout.findUnique({
+      where: { id: scoutId },
+    });
+    return {
+      success: true,
+      data: {
+        ...searchResult.data,
+        scout: scout
+          ? {
+              id: scout.id,
+              name: scout.name,
+              matchCount: scout.matchCount,
+              createdAt: scout.createdAt.toISOString(),
+              criteria: scout.criteria,
+            }
+          : null,
+      },
+    };
   }
 
   async getProfessionalByIdForOrganisation(userId: string, professionalId: string) {

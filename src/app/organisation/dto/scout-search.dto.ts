@@ -71,4 +71,14 @@ export class ScoutSearchDto {
   @IsString()
   @IsOptional()
   description?: string;
+
+  @ApiProperty({ required: false, description: 'Salary period label for UI (weekly, monthly, annually)' })
+  @IsString()
+  @IsOptional()
+  salaryPeriod?: string;
+
+  @ApiProperty({ required: false, description: 'Display name for the saved scout list' })
+  @IsString()
+  @IsOptional()
+  name?: string;
 }

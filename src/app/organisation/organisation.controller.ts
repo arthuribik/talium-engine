@@ -1,6 +1,7 @@
 import {
   Controller,
   Put,
+  Patch,
   Post,
   Get,
   Delete,
@@ -411,7 +412,59 @@ export class OrganisationController {
       salaryMax: body.salaryMax,
       benefits: body.benefits,
       description: body.description,
+      salaryPeriod: body.salaryPeriod,
+      name: body.name,
     });
+  }
+
+  @Get('professionals/scouts')
+  @ApiOperation({ summary: 'List saved direct scout searches for this organisation' })
+  @ApiResponse({ status: 200, description: 'Scout lists' })
+  async listTalentScouts(@Request() req) {
+    return this.organisationService.listTalentScouts(req.user.userId);
+  }
+
+  @Get('professionals/scouts/:scoutId')
+  @ApiOperation({ summary: 'Get a saved scout list with matched professionals' })
+  @ApiParam({ name: 'scoutId', description: 'Talent scout list id' })
+  @ApiResponse({ status: 200, description: 'Scout detail and professionals' })
+  @ApiResponse({ status: 404, description: 'Not found' })
+  async getTalentScoutDetail(@Request() req, @Param('scoutId') scoutId: string) {
+    return this.organisationService.getTalentScoutDetail(req.user.userId, scoutId);
+  }
+
+  @Patch('professionals/scouts/:scoutId')
+  @ApiOperation({ summary: 'Re-run scout search criteria and update saved list' })
+  @ApiParam({ name: 'scoutId', description: 'Talent scout list id' })
+  @ApiResponse({ status: 200, description: 'Updated scout results' })
+  async updateTalentScout(
+    @Request() req,
+    @Param('scoutId') scoutId: string,
+    @Body() body: ScoutSearchDto,
+  ) {
+    return this.organisationService.updateTalentScout(req.user.userId, scoutId, {
+      jobTitle: body.jobTitle,
+      searchType: body.searchType,
+      location: body.location,
+      domicile: body.domicile,
+      workMode: body.workMode,
+      employmentType: body.employmentType,
+      currency: body.currency,
+      salaryMin: body.salaryMin,
+      salaryMax: body.salaryMax,
+      benefits: body.benefits,
+      description: body.description,
+      salaryPeriod: body.salaryPeriod,
+      name: body.name,
+    });
+  }
+
+  @Delete('professionals/scouts/:scoutId')
+  @ApiOperation({ summary: 'Delete a saved scout list' })
+  @ApiParam({ name: 'scoutId', description: 'Talent scout list id' })
+  @ApiResponse({ status: 200, description: 'Deleted' })
+  async deleteTalentScout(@Request() req, @Param('scoutId') scoutId: string) {
+    return this.organisationService.deleteTalentScout(req.user.userId, scoutId);
   }
 
   @Get('professionals')
