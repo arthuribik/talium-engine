@@ -90,6 +90,22 @@ function adminTeamDisplayStatus(status: string): {
   return { key: 'active', label: 'Active' };
 }
 
+const REVIEWED_VERIFICATION_STATUSES = ['verified', 'rejected'] as const;
+
+function activityLevelFromStatus(status: string): 'success' | 'error' | 'info' {
+  if (status === 'verified') return 'success';
+  if (status === 'rejected') return 'error';
+  return 'info';
+}
+
+function formatProUserName(
+  u: { firstName: string; lastName: string } | null | undefined,
+): string {
+  if (!u) return 'Professional';
+  const n = `${u.firstName} ${u.lastName}`.trim();
+  return n || 'Professional';
+}
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -1031,40 +1047,7 @@ export class AdminService {
       );
     }
 
-    const adminActivityLogDemo = [
-      {
-        id: 'al-demo-1',
-        level: 'success' as const,
-        title:
-          'Approved verification request VER-00041 (Amara Okonkwo — ID Verification)',
-        at: new Date('2026-04-22T09:21:00.000Z').toISOString(),
-      },
-      {
-        id: 'al-demo-2',
-        level: 'info' as const,
-        title: 'Reviewed and updated profile for Chidera Eze (PRO-00002)',
-        at: new Date('2026-04-21T15:44:00.000Z').toISOString(),
-      },
-      {
-        id: 'al-demo-3',
-        level: 'warning' as const,
-        title: 'Flagged verification request VER-00038 for senior review',
-        at: new Date('2026-04-20T11:10:00.000Z').toISOString(),
-      },
-      {
-        id: 'al-demo-4',
-        level: 'error' as const,
-        title:
-          'Rejected KYB submission for Bogus Services Inc — insufficient documentation',
-        at: new Date('2026-04-18T14:30:00.000Z').toISOString(),
-      },
-      {
-        id: 'al-demo-5',
-        level: 'info' as const,
-        title: 'Ran KYB check on Greenfield Farms (ORG-00004)',
-        at: new Date('2026-04-17T10:00:00.000Z').toISOString(),
-      },
-    ];
+    const activity = await this.buildAdminTeamMemberActivity(memberUserId);
 
     return {
       success: true,
@@ -1087,27 +1070,261 @@ export class AdminService {
           description: ADMIN_TEAM_ROLE_SUMMARY_DESCRIPTION[role],
         },
         permissionSections,
-        activityLog: {
-          items: adminActivityLogDemo,
-          total: adminActivityLogDemo.length,
-          isPlaceholder: true,
-        },
-        activitySummary: {
-          verificationsReviewed: 312,
-          approvals: 287,
-          rejections: 25,
-          kybChecksRun: 48,
-          profilesEdited: 19,
-          logins30d: 28,
-          isPlaceholder: true,
-        },
+        activityLog: activity.activityLog,
+        activitySummary: activity.activitySummary,
         sessionInfo: {
-          activeSessions: 3,
-          lastIp: '102.88.64.201',
-          device: 'Chrome · macOS',
-          location: 'Lagos, Nigeria',
-          isPlaceholder: true,
+          activeSessions: 0,
+          lastIp: null as string | null,
+          device: null as string | null,
+          location: null as string | null,
         },
+      },
+    };
+  }
+
+  /**
+   * Activity log + summary derived from verification / review tables where `reviewedBy`
+   * matches the admin user. Empty when they have not reviewed anything yet.
+   */
+  private async buildAdminTeamMemberActivity(memberUserId: string) {
+    const reviewedWhere = { reviewedBy: memberUserId };
+    const statusIn = { in: [...REVIEWED_VERIFICATION_STATUSES] };
+
+    const [
+      identityRows,
+      educationRows,
+      workRows,
+      projectRows,
+      orgVerRows,
+      profileEditRows,
+      idTot,
+      idApr,
+      idRej,
+      eduTot,
+      eduApr,
+      eduRej,
+      workTot,
+      workApr,
+      workRej,
+      projTot,
+      projApr,
+      projRej,
+      orgTot,
+      orgApr,
+      orgRej,
+      editTot,
+      editApr,
+      editRej,
+    ] = await Promise.all([
+      this.prisma.identityVerification.findMany({
+        where: { ...reviewedWhere, status: statusIn },
+        orderBy: { verifiedAt: 'desc' },
+        take: 20,
+        include: {
+          professional: {
+            include: { user: { select: { firstName: true, lastName: true } } },
+          },
+        },
+      }),
+      this.prisma.education.findMany({
+        where: { ...reviewedWhere, verificationStatus: statusIn },
+        orderBy: { verifiedAt: 'desc' },
+        take: 20,
+        include: {
+          professional: {
+            include: { user: { select: { firstName: true, lastName: true } } },
+          },
+        },
+      }),
+      this.prisma.workExperience.findMany({
+        where: { ...reviewedWhere, verificationStatus: statusIn },
+        orderBy: { verifiedAt: 'desc' },
+        take: 20,
+        include: {
+          professional: {
+            include: { user: { select: { firstName: true, lastName: true } } },
+          },
+        },
+      }),
+      this.prisma.professionalProject.findMany({
+        where: { ...reviewedWhere, verificationStatus: statusIn },
+        orderBy: { verifiedAt: 'desc' },
+        take: 20,
+        include: {
+          professional: {
+            include: { user: { select: { firstName: true, lastName: true } } },
+          },
+        },
+      }),
+      this.prisma.organisationVerification.findMany({
+        where: { ...reviewedWhere, status: statusIn },
+        orderBy: { reviewedAt: 'desc' },
+        take: 20,
+        include: { organisation: { select: { companyName: true } } },
+      }),
+      this.prisma.professionalProfileEditRequest.findMany({
+        where: { ...reviewedWhere, status: statusIn },
+        orderBy: { reviewedAt: 'desc' },
+        take: 20,
+        include: {
+          professional: {
+            include: { user: { select: { firstName: true, lastName: true } } },
+          },
+        },
+      }),
+      this.prisma.identityVerification.count({
+        where: { ...reviewedWhere, status: statusIn },
+      }),
+      this.prisma.identityVerification.count({
+        where: { ...reviewedWhere, status: 'verified' },
+      }),
+      this.prisma.identityVerification.count({
+        where: { ...reviewedWhere, status: 'rejected' },
+      }),
+      this.prisma.education.count({
+        where: { ...reviewedWhere, verificationStatus: statusIn },
+      }),
+      this.prisma.education.count({
+        where: { ...reviewedWhere, verificationStatus: 'verified' },
+      }),
+      this.prisma.education.count({
+        where: { ...reviewedWhere, verificationStatus: 'rejected' },
+      }),
+      this.prisma.workExperience.count({
+        where: { ...reviewedWhere, verificationStatus: statusIn },
+      }),
+      this.prisma.workExperience.count({
+        where: { ...reviewedWhere, verificationStatus: 'verified' },
+      }),
+      this.prisma.workExperience.count({
+        where: { ...reviewedWhere, verificationStatus: 'rejected' },
+      }),
+      this.prisma.professionalProject.count({
+        where: { ...reviewedWhere, verificationStatus: statusIn },
+      }),
+      this.prisma.professionalProject.count({
+        where: { ...reviewedWhere, verificationStatus: 'verified' },
+      }),
+      this.prisma.professionalProject.count({
+        where: { ...reviewedWhere, verificationStatus: 'rejected' },
+      }),
+      this.prisma.organisationVerification.count({
+        where: { ...reviewedWhere, status: statusIn },
+      }),
+      this.prisma.organisationVerification.count({
+        where: { ...reviewedWhere, status: 'verified' },
+      }),
+      this.prisma.organisationVerification.count({
+        where: { ...reviewedWhere, status: 'rejected' },
+      }),
+      this.prisma.professionalProfileEditRequest.count({
+        where: { ...reviewedWhere, status: statusIn },
+      }),
+      this.prisma.professionalProfileEditRequest.count({
+        where: { ...reviewedWhere, status: 'verified' },
+      }),
+      this.prisma.professionalProfileEditRequest.count({
+        where: { ...reviewedWhere, status: 'rejected' },
+      }),
+    ]);
+
+    type LogItem = {
+      id: string;
+      level: 'success' | 'error' | 'info';
+      title: string;
+      at: string;
+    };
+
+    const items: LogItem[] = [];
+
+    for (const r of identityRows) {
+      const name = formatProUserName(r.professional?.user);
+      const at = (r.verifiedAt ?? r.updatedAt).toISOString();
+      items.push({
+        id: `identity-${r.id}`,
+        level: activityLevelFromStatus(r.status),
+        title: `Identity verification for ${name} — ${r.status}`,
+        at,
+      });
+    }
+    for (const r of educationRows) {
+      const name = formatProUserName(r.professional?.user);
+      const st = r.verificationStatus;
+      const at = (r.verifiedAt ?? r.updatedAt).toISOString();
+      items.push({
+        id: `education-${r.id}`,
+        level: activityLevelFromStatus(st),
+        title: `Education: ${r.institutionName} — ${name} — ${st}`,
+        at,
+      });
+    }
+    for (const r of workRows) {
+      const name = formatProUserName(r.professional?.user);
+      const st = r.verificationStatus;
+      const at = (r.verifiedAt ?? r.updatedAt).toISOString();
+      items.push({
+        id: `work-${r.id}`,
+        level: activityLevelFromStatus(st),
+        title: `Work experience at ${r.organisationName} — ${name} — ${st}`,
+        at,
+      });
+    }
+    for (const r of projectRows) {
+      const name = formatProUserName(r.professional?.user);
+      const st = r.verificationStatus;
+      const at = (r.verifiedAt ?? r.updatedAt).toISOString();
+      items.push({
+        id: `project-${r.id}`,
+        level: activityLevelFromStatus(st),
+        title: `Project “${r.title}” — ${name} — ${st}`,
+        at,
+      });
+    }
+    for (const r of orgVerRows) {
+      const company = r.organisation?.companyName ?? 'Organisation';
+      const st = r.status;
+      const at = (r.reviewedAt ?? r.updatedAt).toISOString();
+      items.push({
+        id: `org-kyb-${r.id}`,
+        level: activityLevelFromStatus(st),
+        title: `Organisation verification (KYB) — ${company} — ${st}`,
+        at,
+      });
+    }
+    for (const r of profileEditRows) {
+      const name = formatProUserName(r.professional?.user);
+      const st = r.status;
+      const at = (r.reviewedAt ?? r.updatedAt).toISOString();
+      items.push({
+        id: `profile-edit-${r.id}`,
+        level: activityLevelFromStatus(st),
+        title: `Profile edit request — ${name} — ${st}`,
+        at,
+      });
+    }
+
+    items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+    const limited = items.slice(0, 50);
+
+    const verificationsReviewed =
+      idTot + eduTot + workTot + projTot + orgTot + editTot;
+    const approvals =
+      idApr + eduApr + workApr + projApr + orgApr + editApr;
+    const rejections =
+      idRej + eduRej + workRej + projRej + orgRej + editRej;
+
+    return {
+      activityLog: {
+        items: limited,
+        total: verificationsReviewed,
+      },
+      activitySummary: {
+        verificationsReviewed,
+        approvals,
+        rejections,
+        kybChecksRun: orgTot,
+        profilesEdited: editTot,
+        logins30d: 0,
       },
     };
   }
@@ -1509,6 +1726,8 @@ export class AdminService {
     limit: number = 20,
     status: string = 'all',
     type: string = 'all',
+    entityType: string = 'all',
+    search: string = '',
   ) {
     const skip = (page - 1) * limit;
 
@@ -1682,15 +1901,38 @@ export class AdminService {
     // Professional payments would be stored in a similar way if implemented
     // For now, we focus on organisation transactions which are actively used
 
+    let filtered = allTransactions;
+    const q = (search || '').trim().toLowerCase();
+    if (q) {
+      filtered = filtered.filter((t) => {
+        const parts = [
+          t.id,
+          t.description,
+          t.entityName,
+          t.user?.email,
+          t.type,
+          t.plan,
+          t.reference,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return parts.includes(q);
+      });
+    }
+    if (entityType === 'organisation' || entityType === 'professional') {
+      filtered = filtered.filter((t) => t.entityType === entityType);
+    }
+
     // Sort by creation date (newest first)
-    allTransactions.sort(
+    filtered.sort(
       (a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
 
     // Apply pagination
-    const total = allTransactions.length;
-    const paginatedTransactions = allTransactions.slice(skip, skip + limit);
+    const total = filtered.length;
+    const paginatedTransactions = filtered.slice(skip, skip + limit);
 
     return {
       success: true,

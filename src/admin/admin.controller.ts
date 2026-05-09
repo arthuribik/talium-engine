@@ -295,6 +295,18 @@ export class AdminController {
     type: String,
     description: 'Filter by type: all, subscription, wallet_topup, credit, debit, addon',
   })
+  @ApiQuery({
+    name: 'entityType',
+    required: false,
+    type: String,
+    description: 'Filter by entity: all, organisation, professional',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Case-insensitive match on id, description, entity, email, type',
+  })
   @ApiResponse({
     status: 200,
     description: 'Transactions retrieved successfully',
@@ -305,12 +317,16 @@ export class AdminController {
     @Query('limit') limit?: string,
     @Query('status') status?: string,
     @Query('type') type?: string,
+    @Query('entityType') entityType?: string,
+    @Query('search') search?: string,
   ) {
     return this.adminService.getAllTransactions(
       page ? parseInt(page) : 1,
       limit ? parseInt(limit) : 20,
       status || 'all',
       type || 'all',
+      entityType || 'all',
+      search || '',
     );
   }
 
