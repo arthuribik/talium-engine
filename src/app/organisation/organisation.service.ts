@@ -1431,6 +1431,8 @@ export class OrganisationService {
       searchType?: 'strict' | 'partial' | 'fuzzy';
       country?: string;
       city?: string;
+      /** Full domicile string from scout form; when searchType is fuzzy, all tokens must match location corpus. */
+      domicileFull?: string;
       verified?: boolean;
       minExperience?: number;
     },
@@ -1443,9 +1445,24 @@ export class OrganisationService {
       throw new NotFoundException('Organisation not found');
     }
 
-    const { page, limit, search, jobTitle, searchType, country, city, verified, minExperience } = filters;
+    const {
+      page,
+      limit,
+      search,
+      jobTitle,
+      searchType,
+      country,
+      city,
+      domicileFull,
+      verified,
+      minExperience,
+    } = filters;
     const skip = (page - 1) * limit;
     const effectiveSearchType = searchType || 'partial';
+    const domicileTrimmed = domicileFull?.trim() || '';
+    const fuzzyLocationActive =
+      effectiveSearchType === 'fuzzy' &&
+      (!!domicileTrimmed || (!!country?.trim() && country.trim().toLowerCase() !== 'global'));
 
     // Job title, domicile city, free-text search, and min experience are applied *after* the row
     // is mapped to "latest work experience" role. Paginating in SQL first would only scan the
@@ -1454,6 +1471,7 @@ export class OrganisationService {
     const needsFullScanBeforePagination =
       !!(jobTitle?.trim()) ||
       !!(city?.trim()) ||
+      !!fuzzyLocationActive ||
       !!(search?.trim()) ||
       minExperience !== undefined;
 
@@ -1498,12 +1516,14 @@ export class OrganisationService {
       ];
     }
 
-    // Filter by country
-    if (country) {
-      where.country = {
-        contains: country,
-        mode: 'insensitive',
-      };
+    // Filter by country (scout "location"). For fuzzy search, apply tokens in-memory against location corpus instead.
+    if (country?.trim() && country.trim().toLowerCase() !== 'global') {
+      if (effectiveSearchType !== 'fuzzy') {
+        where.country = {
+          contains: country.trim(),
+          mode: 'insensitive',
+        };
+      }
     }
 
     // Filter by verified status
@@ -1740,14 +1760,32 @@ export class OrganisationService {
           }
         }
 
-        // Filter by city (if we have location data in work experience)
-        if (city) {
-          const hasCityMatch = prof.workExperience?.some((exp) => {
-            const location = exp.location as any;
-            return location?.city?.toLowerCase().includes(city.toLowerCase());
-          });
-          if (!hasCityMatch && prof.country?.toLowerCase() !== city.toLowerCase()) {
+        // Scout region (organisation "location" criterion): fuzzy = each token must appear in location corpus
+        const locCorpus = (): string => this.professionalLocationCorpusLower(prof);
+        if (
+          country?.trim() &&
+          country.trim().toLowerCase() !== 'global' &&
+          effectiveSearchType === 'fuzzy'
+        ) {
+          if (!this.domicilePhraseMatchesFuzzy(locCorpus(), country.trim())) {
             return false;
+          }
+        }
+
+        // Domicile: fuzzy = token-match full phrase against corpus; partial/strict = first-segment city substring (existing)
+        if (domicileTrimmed) {
+          if (effectiveSearchType === 'fuzzy') {
+            if (!this.domicilePhraseMatchesFuzzy(locCorpus(), domicileTrimmed)) {
+              return false;
+            }
+          } else if (city) {
+            const hasCityMatch = prof.workExperience?.some((exp) => {
+              const location = exp.location as any;
+              return location?.city?.toLowerCase().includes(city.toLowerCase());
+            });
+            if (!hasCityMatch && prof.country?.toLowerCase() !== city.toLowerCase()) {
+              return false;
+            }
           }
         }
 
@@ -1810,6 +1848,42 @@ export class OrganisationService {
         },
       },
     };
+  }
+
+  /** Lowercase string of country / work cities / work location countries / education countries for fuzzy scout matching. */
+  private professionalLocationCorpusLower(prof: any): string {
+    const parts: string[] = [];
+    const push = (v: unknown) => {
+      if (typeof v !== 'string') return;
+      const t = v.trim().toLowerCase();
+      if (t) parts.push(t);
+    };
+    push(prof.country);
+    push(prof.nationality);
+    for (const exp of prof.workExperience || []) {
+      const loc = exp?.location as Record<string, unknown> | null | undefined;
+      if (loc && typeof loc === 'object') {
+        push(loc.city);
+        push(loc.country);
+        push(loc.state);
+        push(loc.region);
+      }
+    }
+    for (const edu of prof.education || []) {
+      push(edu.country);
+    }
+    return parts.join(' ');
+  }
+
+  /** Every whitespace/comma-separated token must appear as a substring of the corpus (same idea as fuzzy job title). */
+  private domicilePhraseMatchesFuzzy(corpusLower: string, phrase: string): boolean {
+    const tokens = phrase
+      .toLowerCase()
+      .split(/[\s,]+/)
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0);
+    if (tokens.length === 0) return true;
+    return tokens.every((t) => corpusLower.includes(t));
   }
 
   private mapProfessionalToOrganisationDirectoryRow(
@@ -1910,20 +1984,24 @@ export class OrganisationService {
     location?: string;
     domicile?: string;
   }) {
+    const searchType = (dto.searchType || 'partial') as 'strict' | 'partial' | 'fuzzy';
     const country =
       dto.location && dto.location.toLowerCase() !== 'global' ? dto.location : undefined;
+    const dom = dto.domicile?.trim() || '';
     let city: string | undefined;
-    if (dto.domicile && dto.domicile.trim()) {
-      const parts = dto.domicile.split(',').map((p) => p.trim()).filter(Boolean);
+    // Fuzzy domicile matches all tokens in-memory; do not narrow with first-segment city only
+    if (dom && searchType !== 'fuzzy') {
+      const parts = dom.split(',').map((p) => p.trim()).filter(Boolean);
       city = parts[0];
     }
     return {
       page: 1,
       limit: 100,
       jobTitle: dto.jobTitle,
-      searchType: (dto.searchType || 'partial') as 'strict' | 'partial' | 'fuzzy',
+      searchType,
       country,
       city,
+      domicileFull: dom || undefined,
     };
   }
 
@@ -2035,59 +2113,50 @@ export class OrganisationService {
     }
     const scout = await this.prisma.organisationTalentScout.findFirst({
       where: { id: scoutId, organisationId: organisation.id },
-      include: {
-        matches: {
-          orderBy: { sortOrder: 'asc' },
-          include: {
-            professional: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    email: true,
-                    firstName: true,
-                    lastName: true,
-                    status: true,
-                  },
-                },
-                identityVerification: true,
-                workExperience: {
-                  orderBy: { startDate: 'asc' },
-                },
-                education: {
-                  take: 1,
-                  orderBy: { createdAt: 'desc' },
-                },
-              },
-            },
-          },
-        },
-      },
     });
     if (!scout) {
       throw new NotFoundException('Scout list not found');
     }
-    const professionals = scout.matches.map((m) =>
-      this.mapRawProfessionalToDirectoryListing(m.professional as any),
+
+    const criteriaRaw = (scout.criteria || {}) as Record<string, unknown>;
+    const stRaw = criteriaRaw.searchType;
+    const searchTypeNorm =
+      typeof stRaw === 'string' && ['strict', 'partial', 'fuzzy'].includes(stRaw.toLowerCase())
+        ? (stRaw.toLowerCase() as 'strict' | 'partial' | 'fuzzy')
+        : undefined;
+
+    const searchResult = await this.searchProfessionals(
+      userId,
+      this.scoutSearchFilterParams({
+        jobTitle:
+          criteriaRaw.jobTitle != null && String(criteriaRaw.jobTitle).trim()
+            ? String(criteriaRaw.jobTitle)
+            : undefined,
+        searchType: searchTypeNorm,
+        location:
+          criteriaRaw.location != null && String(criteriaRaw.location).trim()
+            ? String(criteriaRaw.location)
+            : undefined,
+        domicile:
+          criteriaRaw.domicile != null && String(criteriaRaw.domicile).trim()
+            ? String(criteriaRaw.domicile)
+            : undefined,
+      }),
     );
-    const total = professionals.length;
+
+    const professionals = searchResult.data.professionals as any[];
     return {
       success: true,
       data: {
         scout: {
           id: scout.id,
           name: scout.name,
-          matchCount: scout.matchCount,
+          matchCount: professionals.length,
           criteria: scout.criteria,
           createdAt: scout.createdAt.toISOString(),
         },
         professionals,
-        pagination: {
-          page: 1,
-          limit: Math.max(total, 1),
-          total,
-          totalPages: 1,
-        },
+        pagination: searchResult.data.pagination,
       },
     };
   }

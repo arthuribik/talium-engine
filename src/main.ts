@@ -8,6 +8,10 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
+  // Express enables weak ETags by default. Browsers/axios may send If-None-Match on repeat GETs;
+  // Express then responds 304 with no body, so JSON clients see empty data. Disable for API responses.
+  app.getHttpAdapter().getInstance().set('etag', false);
+
   // Serve uploaded files (e.g. ID documents)
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
 
