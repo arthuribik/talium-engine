@@ -83,7 +83,7 @@ export class OrganisationService {
     // Parse description field - can be plain text or JSON with category data
     let descriptionText = '';
     let categoryData: any = {};
-    
+
     if (organisation.description) {
       try {
         if (organisation.description.trim().startsWith('{')) {
@@ -114,8 +114,10 @@ export class OrganisationService {
 
     // Extract headquarters - check for separate fields first, then fall back to address city/country
     // Headquarters might be stored separately or might be the same as address location
-    const headquartersCity = addressData.headquartersCity || addressData.city || null;
-    const headquartersCountry = addressData.headquartersCountry || addressData.country || null;
+    const headquartersCity =
+      addressData.headquartersCity || addressData.city || null;
+    const headquartersCountry =
+      addressData.headquartersCountry || addressData.country || null;
 
     // Format founded date from yearOfCommencement
     const foundedDate = organisation.yearOfCommencement
@@ -125,9 +127,13 @@ export class OrganisationService {
     // Determine legalName and organisationName based on registration status
     // For registered: companyName is the legalName
     // For non-registered: companyName is the organisationName
-    const legalName = organisation.isRegistered ? organisation.companyName : null;
-    const organisationName = !organisation.isRegistered ? organisation.companyName : null;
-    
+    const legalName = organisation.isRegistered
+      ? organisation.companyName
+      : null;
+    const organisationName = !organisation.isRegistered
+      ? organisation.companyName
+      : null;
+
     // otherName might be stored separately or in a different field
     // For now, we'll check if there's a separate field, otherwise it might be in description JSON
     const otherName = (organisation as any).otherName || null;
@@ -150,8 +156,10 @@ export class OrganisationService {
       incorporationNumber: organisation.incorporationNumber || null,
 
       // Organisation Details (for non-registered)
-      organisationCountry: !organisation.isRegistered ? organisation.country : null,
-      
+      organisationCountry: !organisation.isRegistered
+        ? organisation.country
+        : null,
+
       // User contact info
       user: {
         email: organisation.user?.email || null,
@@ -520,7 +528,11 @@ export class OrganisationService {
     currHires = currHiredIds.size;
 
     const percent = (curr: number, prev: number) =>
-      prev === 0 ? (curr > 0 ? 100 : 0) : Math.round(((curr - prev) / prev) * 100);
+      prev === 0
+        ? curr > 0
+          ? 100
+          : 0
+        : Math.round(((curr - prev) / prev) * 100);
     const totalJobsChange = percent(currTotalJobs, prevTotalJobs);
     const activeJobsPrev = previousJobs.filter(
       (j) => j.status === 'published' || j.status === 'paused',
@@ -570,10 +582,23 @@ export class OrganisationService {
 
   private formatSalaryRange(pay: any): string {
     if (!pay || typeof pay !== 'object') return '—';
-    const sym = pay.currency === 'USD' ? '$' : pay.currency === 'GBP' ? '£' : pay.currency === 'EUR' ? '€' : pay.currency || '';
-    const period = pay.period === 'Per annum' ? 'yearly' : pay.period === 'Per month' ? 'monthly' : pay.period || '';
+    const sym =
+      pay.currency === 'USD'
+        ? '$'
+        : pay.currency === 'GBP'
+          ? '£'
+          : pay.currency === 'EUR'
+            ? '€'
+            : pay.currency || '';
+    const period =
+      pay.period === 'Per annum'
+        ? 'yearly'
+        : pay.period === 'Per month'
+          ? 'monthly'
+          : pay.period || '';
     const periodStr = period ? ` / ${period}` : '';
-    const fmt = (n: number) => Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+    const fmt = (n: number) =>
+      Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
     if (pay.min != null && pay.max != null) {
       return `${sym}${fmt(Number(pay.min))} - ${sym}${fmt(Number(pay.max))}${periodStr}`;
     }
@@ -648,7 +673,16 @@ export class OrganisationService {
       }),
     ]);
 
-    const payJson = (job: any) => (typeof job.pay === 'string' ? (() => { try { return JSON.parse(job.pay); } catch { return {}; } })() : job.pay) || {};
+    const payJson = (job: any) =>
+      (typeof job.pay === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(job.pay);
+            } catch {
+              return {};
+            }
+          })()
+        : job.pay) || {};
 
     return {
       success: true,
@@ -706,7 +740,16 @@ export class OrganisationService {
     if (!job) {
       throw new NotFoundException('Job not found');
     }
-    const payRaw = typeof job.pay === 'string' ? (() => { try { return JSON.parse(job.pay as string); } catch { return {}; } })() : (job.pay as object) || {};
+    const payRaw =
+      typeof job.pay === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(job.pay as string);
+            } catch {
+              return {};
+            }
+          })()
+        : (job.pay as object) || {};
     return {
       success: true,
       data: {
@@ -957,7 +1000,10 @@ export class OrganisationService {
     const updateData: { status: string; applicationData?: any } = { status };
     if (status === 'rejected' && reason != null && String(reason).trim()) {
       const existing = (application.applicationData as any) || {};
-      updateData.applicationData = { ...existing, rejectionReason: String(reason).trim() };
+      updateData.applicationData = {
+        ...existing,
+        rejectionReason: String(reason).trim(),
+      };
     }
 
     // Update application status
@@ -1116,7 +1162,8 @@ export class OrganisationService {
     used: number;
     remaining: number | null;
   }> {
-    const u = (k: string, def = 0) => (typeof stats[k] === 'number' ? stats[k] : def);
+    const u = (k: string, def = 0) =>
+      typeof stats[k] === 'number' ? stats[k] : def;
 
     const templates: Record<
       string,
@@ -1197,14 +1244,24 @@ export class OrganisationService {
         },
       ],
       enterprise: [
-        { key: 'jobPosts', feature: 'Job Posts', limit: 'Unlimited', cap: null },
+        {
+          key: 'jobPosts',
+          feature: 'Job Posts',
+          limit: 'Unlimited',
+          cap: null,
+        },
         {
           key: 'applicantsPerPost',
           feature: 'Applicants per Post',
           limit: 'Unlimited',
           cap: null,
         },
-        { key: 'emails', feature: 'Emails / month', limit: 'Unlimited', cap: null },
+        {
+          key: 'emails',
+          feature: 'Emails / month',
+          limit: 'Unlimited',
+          cap: null,
+        },
         {
           key: 'interviews',
           feature: 'Interview Schedules / month',
@@ -1263,7 +1320,8 @@ export class OrganisationService {
     used: number;
     remaining: number | null;
   }> {
-    const u = (k: string, def = 0) => (typeof stats[k] === 'number' ? stats[k] : def);
+    const u = (k: string, def = 0) =>
+      typeof stats[k] === 'number' ? stats[k] : def;
     return [
       {
         key: 'tokensPurchased',
@@ -1462,17 +1520,18 @@ export class OrganisationService {
     const domicileTrimmed = domicileFull?.trim() || '';
     const fuzzyLocationActive =
       effectiveSearchType === 'fuzzy' &&
-      (!!domicileTrimmed || (!!country?.trim() && country.trim().toLowerCase() !== 'global'));
+      (!!domicileTrimmed ||
+        (!!country?.trim() && country.trim().toLowerCase() !== 'global'));
 
     // Job title, domicile city, free-text search, and min experience are applied *after* the row
     // is mapped to "latest work experience" role. Paginating in SQL first would only scan the
     // newest `limit` profiles — older matches (and newly added ones once they appear in any
     // slice) would be missing from Direct Scout results.
     const needsFullScanBeforePagination =
-      !!(jobTitle?.trim()) ||
-      !!(city?.trim()) ||
+      !!jobTitle?.trim() ||
+      !!city?.trim() ||
       !!fuzzyLocationActive ||
-      !!(search?.trim()) ||
+      !!search?.trim() ||
       minExperience !== undefined;
 
     /** Cap for in-memory filter path (Direct Scout / filtered directory). */
@@ -1580,7 +1639,11 @@ export class OrganisationService {
       ? 0
       : await this.prisma.professional.count({ where });
 
-    const extractNestedSearchTerms = (input: unknown, terms: string[], depth = 0) => {
+    const extractNestedSearchTerms = (
+      input: unknown,
+      terms: string[],
+      depth = 0,
+    ) => {
       if (depth > 4 || input === null || input === undefined) return;
       if (typeof input === 'string') {
         const v = input.trim().toLowerCase();
@@ -1592,7 +1655,9 @@ export class OrganisationService {
         return;
       }
       if (Array.isArray(input)) {
-        input.forEach((item) => extractNestedSearchTerms(item, terms, depth + 1));
+        input.forEach((item) =>
+          extractNestedSearchTerms(item, terms, depth + 1),
+        );
         return;
       }
       if (typeof input === 'object') {
@@ -1687,21 +1752,32 @@ export class OrganisationService {
       .map((prof) => {
         let yearsOfExperience = 0;
         if (prof.workExperience && prof.workExperience.length > 0) {
-          const earliestStart = prof.workExperience.reduce((earliest, exp) => {
-            const startDate = new Date(exp.startDate);
-            return !earliest || startDate < earliest ? startDate : earliest;
-          }, null as Date | null);
+          const earliestStart = prof.workExperience.reduce(
+            (earliest, exp) => {
+              const startDate = new Date(exp.startDate);
+              return !earliest || startDate < earliest ? startDate : earliest;
+            },
+            null as Date | null,
+          );
 
           if (earliestStart) {
-            const endDate = prof.workExperience.some((exp) => exp.currentlyWorking)
+            const endDate = prof.workExperience.some(
+              (exp) => exp.currentlyWorking,
+            )
               ? new Date()
-              : prof.workExperience.reduce((latest, exp) => {
-                  const endDate = exp.endDate ? new Date(exp.endDate) : new Date();
-                  return !latest || endDate > latest ? endDate : latest;
-                }, null as Date | null) || new Date();
+              : prof.workExperience.reduce(
+                  (latest, exp) => {
+                    const endDate = exp.endDate
+                      ? new Date(exp.endDate)
+                      : new Date();
+                    return !latest || endDate > latest ? endDate : latest;
+                  },
+                  null as Date | null,
+                ) || new Date();
 
             yearsOfExperience = Math.floor(
-              (endDate.getTime() - earliestStart.getTime()) / (1000 * 60 * 60 * 24 * 365),
+              (endDate.getTime() - earliestStart.getTime()) /
+                (1000 * 60 * 60 * 24 * 365),
             );
           }
         }
@@ -1722,22 +1798,38 @@ export class OrganisationService {
         // Single search box: match name, email, profession, or location
         if (search) {
           const term = search.toLowerCase();
-          const name = `${(prof as any).user?.firstName || ''} ${(prof as any).user?.lastName || ''}`.trim().toLowerCase();
+          const name =
+            `${(prof as any).user?.firstName || ''} ${(prof as any).user?.lastName || ''}`
+              .trim()
+              .toLowerCase();
           const email = ((prof as any).user?.email || '').toLowerCase();
           const professionMatch = prof.profession?.toLowerCase().includes(term);
-          const countryMatch = (prof.country || '').toLowerCase().includes(term);
+          const countryMatch = (prof.country || '')
+            .toLowerCase()
+            .includes(term);
           const cityMatch = prof.workExperience?.some((exp) => {
             const loc = (exp as any).location;
             const c = (loc?.city || '').toLowerCase();
             return c && c.includes(term);
           });
-          if (!(name.includes(term) || email.includes(term) || professionMatch || countryMatch || cityMatch)) {
+          if (
+            !(
+              name.includes(term) ||
+              email.includes(term) ||
+              professionMatch ||
+              countryMatch ||
+              cityMatch
+            )
+          ) {
             return false;
           }
         }
 
         // Filter by minimum experience
-        if (minExperience !== undefined && prof.yearsOfExperience < minExperience) {
+        if (
+          minExperience !== undefined &&
+          prof.yearsOfExperience < minExperience
+        ) {
           return false;
         }
 
@@ -1746,22 +1838,41 @@ export class OrganisationService {
           const title = jobTitle.toLowerCase().trim();
           const role = (prof.profession || '').toLowerCase();
           const searchTerms = getVerificationProfileSearchTerms(prof);
-          const profileCorpus = searchTerms.join(' ');
+          // const profileCorpus = searchTerms.join(' ');
           if (effectiveSearchType === 'strict') {
-            if (!(role === title || searchTerms.some((term) => term === title))) return false;
+            if (!(role === title || searchTerms.some((term) => term === title)))
+              return false;
           } else if (effectiveSearchType === 'fuzzy') {
             const words = title.split(/\s+/).filter(Boolean);
-            const allWordsMatch = words.every(
-              (word) => role.includes(word) || profileCorpus.includes(word),
+
+            const roleFields = [
+              prof.profession,
+              ...(prof.workExperience || []).map((e: any) => e.role),
+            ]
+              .filter(Boolean)
+              .join(' ')
+              .toLowerCase();
+
+            const anyWordMatches = words.some((word) =>
+              roleFields.includes(word),
             );
-            if (!allWordsMatch) return false;
+            if (!anyWordMatches) return false;
           } else {
-            if (!(role.includes(title) || profileCorpus.includes(title))) return false;
+            const roleFields = [
+              prof.profession,
+              ...(prof.workExperience || []).map((e: any) => e.role),
+            ]
+              .filter(Boolean)
+              .join(' ')
+              .toLowerCase();
+
+            if (!roleFields.includes(title)) return false;
           }
         }
 
         // Scout region (organisation "location" criterion): fuzzy = each token must appear in location corpus
-        const locCorpus = (): string => this.professionalLocationCorpusLower(prof);
+        const locCorpus = (): string =>
+          this.professionalLocationCorpusLower(prof);
         if (
           country?.trim() &&
           country.trim().toLowerCase() !== 'global' &&
@@ -1775,7 +1886,9 @@ export class OrganisationService {
         // Domicile: fuzzy = token-match full phrase against corpus; partial/strict = first-segment city substring (existing)
         if (domicileTrimmed) {
           if (effectiveSearchType === 'fuzzy') {
-            if (!this.domicilePhraseMatchesFuzzy(locCorpus(), domicileTrimmed)) {
+            if (
+              !this.domicilePhraseMatchesFuzzy(locCorpus(), domicileTrimmed)
+            ) {
               return false;
             }
           } else if (city) {
@@ -1783,7 +1896,10 @@ export class OrganisationService {
               const location = exp.location as any;
               return location?.city?.toLowerCase().includes(city.toLowerCase());
             });
-            if (!hasCityMatch && prof.country?.toLowerCase() !== city.toLowerCase()) {
+            if (
+              !hasCityMatch &&
+              prof.country?.toLowerCase() !== city.toLowerCase()
+            ) {
               return false;
             }
           }
@@ -1793,16 +1909,18 @@ export class OrganisationService {
       });
 
     const totalFiltered = professionalsWithExperience.length;
-    const pageSlice =
-      needsFullScanBeforePagination
-        ? professionalsWithExperience.slice(skip, skip + limit)
-        : professionalsWithExperience;
+    const pageSlice = needsFullScanBeforePagination
+      ? professionalsWithExperience.slice(skip, skip + limit)
+      : professionalsWithExperience;
 
     // Get verification status (percentage + label for badges)
     const getVerificationStatus = (prof: any) => {
       const completeness = Math.min(100, prof.profileCompleteness || 0);
       if (prof.identityStatus === 'verified') {
-        return { percentage: Math.max(completeness, 100), status: 'Verified with Gov ID' };
+        return {
+          percentage: Math.max(completeness, 100),
+          status: 'Verified with Gov ID',
+        };
       } else if (completeness >= 30) {
         return { percentage: completeness, status: 'Self Declared' };
       } else {
@@ -1831,14 +1949,20 @@ export class OrganisationService {
       return map[c] || c;
     };
 
-    const totalForPagination = needsFullScanBeforePagination ? totalFiltered : dbCount;
+    const totalForPagination = needsFullScanBeforePagination
+      ? totalFiltered
+      : dbCount;
     const totalPages = Math.max(1, Math.ceil(totalForPagination / limit));
 
     return {
       success: true,
       data: {
         professionals: pageSlice.map((prof) =>
-          this.mapProfessionalToOrganisationDirectoryRow(prof, getNationality, getVerificationStatus),
+          this.mapProfessionalToOrganisationDirectoryRow(
+            prof,
+            getNationality,
+            getVerificationStatus,
+          ),
         ),
         pagination: {
           page,
@@ -1876,7 +2000,10 @@ export class OrganisationService {
   }
 
   /** Every whitespace/comma-separated token must appear as a substring of the corpus (same idea as fuzzy job title). */
-  private domicilePhraseMatchesFuzzy(corpusLower: string, phrase: string): boolean {
+  private domicilePhraseMatchesFuzzy(
+    corpusLower: string,
+    phrase: string,
+  ): boolean {
     const tokens = phrase
       .toLowerCase()
       .split(/[\s,]+/)
@@ -1894,7 +2021,9 @@ export class OrganisationService {
     return {
       id: prof.id,
       userId: prof.userId,
-      name: `${prof.user.firstName || ''} ${prof.user.lastName || ''}`.trim() || prof.user.email,
+      name:
+        `${prof.user.firstName || ''} ${prof.user.lastName || ''}`.trim() ||
+        prof.user.email,
       email: prof.user.email,
       nationality: getNationality(prof),
       location: {
@@ -1915,21 +2044,30 @@ export class OrganisationService {
   private enrichProfessionalWithRoleAndTenure(prof: any) {
     let yearsOfExperience = 0;
     if (prof.workExperience && prof.workExperience.length > 0) {
-      const earliestStart = prof.workExperience.reduce((earliest: Date | null, exp: any) => {
-        const startDate = new Date(exp.startDate);
-        return !earliest || startDate < earliest ? startDate : earliest;
-      }, null as Date | null);
+      const earliestStart = prof.workExperience.reduce(
+        (earliest: Date | null, exp: any) => {
+          const startDate = new Date(exp.startDate);
+          return !earliest || startDate < earliest ? startDate : earliest;
+        },
+        null as Date | null,
+      );
 
       if (earliestStart) {
-        const endDate = prof.workExperience.some((exp: any) => exp.currentlyWorking)
+        const endDate = prof.workExperience.some(
+          (exp: any) => exp.currentlyWorking,
+        )
           ? new Date()
-          : prof.workExperience.reduce((latest: Date | null, exp: any) => {
-              const ed = exp.endDate ? new Date(exp.endDate) : new Date();
-              return !latest || ed > latest ? ed : latest;
-            }, null as Date | null) || new Date();
+          : prof.workExperience.reduce(
+              (latest: Date | null, exp: any) => {
+                const ed = exp.endDate ? new Date(exp.endDate) : new Date();
+                return !latest || ed > latest ? ed : latest;
+              },
+              null as Date | null,
+            ) || new Date();
 
         yearsOfExperience = Math.floor(
-          (endDate.getTime() - earliestStart.getTime()) / (1000 * 60 * 60 * 24 * 365),
+          (endDate.getTime() - earliestStart.getTime()) /
+            (1000 * 60 * 60 * 24 * 365),
         );
       }
     }
@@ -1963,7 +2101,10 @@ export class OrganisationService {
     const getVerificationStatus = (p: any) => {
       const completeness = Math.min(100, p.profileCompleteness || 0);
       if (p.identityStatus === 'verified') {
-        return { percentage: Math.max(completeness, 100), status: 'Verified with Gov ID' };
+        return {
+          percentage: Math.max(completeness, 100),
+          status: 'Verified with Gov ID',
+        };
       } else if (completeness >= 30) {
         return { percentage: completeness, status: 'Self Declared' };
       } else {
@@ -1984,14 +2125,22 @@ export class OrganisationService {
     location?: string;
     domicile?: string;
   }) {
-    const searchType = (dto.searchType || 'partial') as 'strict' | 'partial' | 'fuzzy';
+    const searchType = (dto.searchType || 'partial') as
+      | 'strict'
+      | 'partial'
+      | 'fuzzy';
     const country =
-      dto.location && dto.location.toLowerCase() !== 'global' ? dto.location : undefined;
+      dto.location && dto.location.toLowerCase() !== 'global'
+        ? dto.location
+        : undefined;
     const dom = dto.domicile?.trim() || '';
     let city: string | undefined;
     // Fuzzy domicile matches all tokens in-memory; do not narrow with first-segment city only
     if (dom && searchType !== 'fuzzy') {
-      const parts = dom.split(',').map((p) => p.trim()).filter(Boolean);
+      const parts = dom
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean);
       city = parts[0];
     }
     return {
@@ -2038,7 +2187,9 @@ export class OrganisationService {
     const professionals = searchResult.data.professionals as { id: string }[];
     const displayName =
       (dto.name && dto.name.trim()) ||
-      [dto.jobTitle, dto.location].filter((x) => x && String(x).trim()).join(' · ') ||
+      [dto.jobTitle, dto.location]
+        .filter((x) => x && String(x).trim())
+        .join(' · ') ||
       'Scout list';
 
     const criteriaPayload = { ...dto };
@@ -2121,7 +2272,8 @@ export class OrganisationService {
     const criteriaRaw = (scout.criteria || {}) as Record<string, unknown>;
     const stRaw = criteriaRaw.searchType;
     const searchTypeNorm =
-      typeof stRaw === 'string' && ['strict', 'partial', 'fuzzy'].includes(stRaw.toLowerCase())
+      typeof stRaw === 'string' &&
+      ['strict', 'partial', 'fuzzy'].includes(stRaw.toLowerCase())
         ? (stRaw.toLowerCase() as 'strict' | 'partial' | 'fuzzy')
         : undefined;
 
@@ -2216,7 +2368,9 @@ export class OrganisationService {
     const professionals = searchResult.data.professionals as { id: string }[];
     const displayName =
       (dto.name && dto.name.trim()) ||
-      [dto.jobTitle, dto.location].filter((x) => x && String(x).trim()).join(' · ') ||
+      [dto.jobTitle, dto.location]
+        .filter((x) => x && String(x).trim())
+        .join(' · ') ||
       existing.name;
 
     const criteriaPayload = { ...dto };
@@ -2262,7 +2416,10 @@ export class OrganisationService {
     };
   }
 
-  async getProfessionalByIdForOrganisation(userId: string, professionalId: string) {
+  async getProfessionalByIdForOrganisation(
+    userId: string,
+    professionalId: string,
+  ) {
     const organisation = await this.prisma.organisation.findUnique({
       where: { userId },
     });
@@ -2297,16 +2454,22 @@ export class OrganisationService {
     const workExp = professional.workExperience || [];
     let yearsOfExperience = 0;
     if (workExp.length > 0) {
-      const earliest = workExp.reduce((min, e) => {
-        const d = new Date(e.startDate);
-        return !min || d < min ? d : min;
-      }, null as Date | null);
+      const earliest = workExp.reduce(
+        (min, e) => {
+          const d = new Date(e.startDate);
+          return !min || d < min ? d : min;
+        },
+        null as Date | null,
+      );
       const latest = workExp.some((e) => e.currentlyWorking)
         ? new Date()
-        : workExp.reduce((max, e) => {
-            const d = e.endDate ? new Date(e.endDate) : new Date();
-            return !max || d > max ? d : max;
-          }, null as Date | null) || new Date();
+        : workExp.reduce(
+            (max, e) => {
+              const d = e.endDate ? new Date(e.endDate) : new Date();
+              return !max || d > max ? d : max;
+            },
+            null as Date | null,
+          ) || new Date();
       if (earliest) {
         yearsOfExperience = Math.floor(
           (latest.getTime() - earliest.getTime()) / (1000 * 60 * 60 * 24 * 365),
@@ -2350,7 +2513,9 @@ export class OrganisationService {
       data: {
         id: professional.id,
         userId: professional.userId,
-        name: `${professional.user.firstName || ''} ${professional.user.lastName || ''}`.trim() || professional.user.email,
+        name:
+          `${professional.user.firstName || ''} ${professional.user.lastName || ''}`.trim() ||
+          professional.user.email,
         email: professional.user.email,
         country: professional.country,
         nationality: getNationality(professional),
@@ -2505,7 +2670,11 @@ export class OrganisationService {
       await this.mailService.send(
         {
           to: professional.user.email,
-          subject: subject || (jobTitle ? `Headhunt Offer: ${jobTitle} at ${organisation.companyName}` : 'Message from Organisation'),
+          subject:
+            subject ||
+            (jobTitle
+              ? `Headhunt Offer: ${jobTitle} at ${organisation.companyName}`
+              : 'Message from Organisation'),
         },
         `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #333;">${subject || (jobTitle ? `Headhunt Offer: ${jobTitle}` : 'Message from Organisation')}</h2>
@@ -2539,7 +2708,11 @@ export class OrganisationService {
   }
 
   private buildScoutMessage(
-    organisation: { companyName: string; industry?: string | null; country?: string | null },
+    organisation: {
+      companyName: string;
+      industry?: string | null;
+      country?: string | null;
+    },
     jobTitle?: string,
     employmentType?: string,
     workMode?: string,
@@ -2553,12 +2726,14 @@ export class OrganisationService {
     let text = jobTitle
       ? `You have been headhunted by ${orgIntro} for the position of ${jobTitle}.`
       : message || 'We would like to connect with you.';
-    if (employmentType) text += `\n\nEmployment Type: ${this.employmentTypeLabel(employmentType)}`;
+    if (employmentType)
+      text += `\n\nEmployment Type: ${this.employmentTypeLabel(employmentType)}`;
     if (workMode) text += `\nWork Mode: ${workMode}`;
     if (location) text += `\nLocation: ${location}`;
     if (description) text += `\n\nJob Description:\n${description}`;
     if (message && jobTitle) text += `\n\n${message}`;
-    text += '\n\nPlease review the offer and Job description and respond as soon as possible.';
+    text +=
+      '\n\nPlease review the offer and Job description and respond as soon as possible.';
     return text;
   }
 
@@ -2627,7 +2802,15 @@ export class OrganisationService {
         data: { status: 'hired' },
       });
 
-      const scoutMessage = this.buildScoutMessage(organisation, jobTitle, employmentType, workMode, location, description, message);
+      const scoutMessage = this.buildScoutMessage(
+        organisation,
+        jobTitle,
+        employmentType,
+        workMode,
+        location,
+        description,
+        message,
+      );
       if (scoutMessage) {
         await this.sendMessageToProfessional(
           userId,
@@ -2660,7 +2843,15 @@ export class OrganisationService {
     }
 
     // Direct scout (no jobId): send scout request email
-    const scoutMessage = this.buildScoutMessage(organisation, jobTitle, employmentType, workMode, location, description, message);
+    const scoutMessage = this.buildScoutMessage(
+      organisation,
+      jobTitle,
+      employmentType,
+      workMode,
+      location,
+      description,
+      message,
+    );
     if (scoutMessage) {
       await this.sendMessageToProfessional(
         userId,
@@ -2736,9 +2927,15 @@ export class OrganisationService {
       },
     });
     if (!organisation) throw new NotFoundException('Organisation not found');
-    const orgAdmins = organisation.members.filter((m) => m.role === 'org_admin').length;
-    const editors = organisation.members.filter((m) => m.role === 'org_recruiter').length;
-    const viewers = organisation.members.filter((m) => m.role === 'org_member').length;
+    const orgAdmins = organisation.members.filter(
+      (m) => m.role === 'org_admin',
+    ).length;
+    const editors = organisation.members.filter(
+      (m) => m.role === 'org_recruiter',
+    ).length;
+    const viewers = organisation.members.filter(
+      (m) => m.role === 'org_member',
+    ).length;
     return {
       success: true,
       data: {
@@ -2783,7 +2980,9 @@ export class OrganisationService {
       id: 'owner',
       memberId: null,
       userId: organisation.user.id,
-      name: `${organisation.user.firstName} ${organisation.user.lastName}`.trim() || 'Owner',
+      name:
+        `${organisation.user.firstName} ${organisation.user.lastName}`.trim() ||
+        'Owner',
       email: organisation.user.email,
       role: 'org_owner' as const,
       joined: organisation.createdAt,
@@ -2846,7 +3045,9 @@ export class OrganisationService {
     });
     if (existingInvite) {
       if (existingInvite.expiresAt > new Date()) {
-        throw new BadRequestException('An invitation has already been sent to this email');
+        throw new BadRequestException(
+          'An invitation has already been sent to this email',
+        );
       }
       await this.prisma.organisationInvitation.delete({
         where: { id: existingInvite.id },
@@ -2888,7 +3089,9 @@ export class OrganisationService {
       await this.prisma.organisationInvitation.delete({
         where: { id: invitation.id },
       });
-      throw new ServiceUnavailableException('Could not send invitation email. Please try again.');
+      throw new ServiceUnavailableException(
+        'Could not send invitation email. Please try again.',
+      );
     }
     void this.logOrganisationActivityFromUser(organisation.id, userId, {
       action: 'Team Member Invited',
@@ -2912,7 +3115,9 @@ export class OrganisationService {
     if (!organisation) throw new NotFoundException('Organisation not found');
     const member = await this.prisma.organisationMember.findFirst({
       where: { id: memberId, organisationId: organisation.id },
-      include: { user: { select: { email: true, firstName: true, lastName: true } } },
+      include: {
+        user: { select: { email: true, firstName: true, lastName: true } },
+      },
     });
     if (!member) throw new NotFoundException('Member not found');
     await this.prisma.organisationMember.update({
@@ -2920,7 +3125,8 @@ export class OrganisationService {
       data: { role: role as any },
     });
     const memberLabel =
-      `${member.user.firstName} ${member.user.lastName}`.trim() || member.user.email;
+      `${member.user.firstName} ${member.user.lastName}`.trim() ||
+      member.user.email;
     void this.logOrganisationActivityFromUser(organisation.id, userId, {
       action: 'Team Role Updated',
       details: `Changed ${memberLabel}'s role to ${role.replace('org_', '').replace('_', ' ')}.`,
@@ -2940,11 +3146,14 @@ export class OrganisationService {
     if (!organisation) throw new NotFoundException('Organisation not found');
     const member = await this.prisma.organisationMember.findFirst({
       where: { id: memberId, organisationId: organisation.id },
-      include: { user: { select: { email: true, firstName: true, lastName: true } } },
+      include: {
+        user: { select: { email: true, firstName: true, lastName: true } },
+      },
     });
     if (!member) throw new NotFoundException('Member not found');
     const memberLabel =
-      `${member.user.firstName} ${member.user.lastName}`.trim() || member.user.email;
+      `${member.user.firstName} ${member.user.lastName}`.trim() ||
+      member.user.email;
     await this.prisma.organisationMember.delete({
       where: { id: memberId },
     });
@@ -3012,8 +3221,8 @@ export class OrganisationService {
         firstName: dto.firstName.trim(),
         lastName: dto.lastName.trim(),
         title: dto.title.trim(),
-        bio: (dto.bio && dto.bio.trim()) ? dto.bio.trim() : null,
-        email: (dto.email && dto.email.trim()) ? dto.email.trim() : null,
+        bio: dto.bio && dto.bio.trim() ? dto.bio.trim() : null,
+        email: dto.email && dto.email.trim() ? dto.email.trim() : null,
         linkedInUrl: this.normalizeLinkedInUrl(dto.linkedInUrl),
         sortOrder: nextOrder,
       },
@@ -3067,8 +3276,12 @@ export class OrganisationService {
         ...(dto.firstName != null && { firstName: dto.firstName.trim() }),
         ...(dto.lastName != null && { lastName: dto.lastName.trim() }),
         ...(dto.title != null && { title: dto.title.trim() }),
-        ...(dto.bio !== undefined && { bio: (dto.bio && dto.bio.trim()) ? dto.bio.trim() : null }),
-        ...(dto.email !== undefined && { email: (dto.email && dto.email.trim()) ? dto.email.trim() : null }),
+        ...(dto.bio !== undefined && {
+          bio: dto.bio && dto.bio.trim() ? dto.bio.trim() : null,
+        }),
+        ...(dto.email !== undefined && {
+          email: dto.email && dto.email.trim() ? dto.email.trim() : null,
+        }),
         ...(dto.linkedInUrl !== undefined && {
           linkedInUrl: this.normalizeLinkedInUrl(dto.linkedInUrl),
         }),
@@ -3251,7 +3464,10 @@ export class OrganisationService {
     };
   }
 
-  async submitKybIncorporationDetails(userId: string, dto: KybIncorporationDto) {
+  async submitKybIncorporationDetails(
+    userId: string,
+    dto: KybIncorporationDto,
+  ) {
     const organisation = await this.prisma.organisation.findUnique({
       where: { userId },
     });
@@ -3387,13 +3603,13 @@ export class OrganisationService {
     // Create verification request
     const verificationRequest =
       await this.prisma.organisationVerification.create({
-      data: {
-        organisationId: orgId,
-        status: 'under_review',
-        documents: verificationDto.documents as any,
-        estimatedCompletionDate,
-      },
-    });
+        data: {
+          organisationId: orgId,
+          status: 'under_review',
+          documents: verificationDto.documents as any,
+          estimatedCompletionDate,
+        },
+      });
 
     // Update organisation verification status
     await this.prisma.organisation.update({
@@ -3489,7 +3705,8 @@ export class OrganisationService {
       addressData.walletApproxNgn ?? Math.round(walletTokenBalance * 35),
     );
     const walletApproxUsd = Number(
-      addressData.walletApproxUsd ?? Math.round(walletTokenBalance * 0.05 * 100) / 100,
+      addressData.walletApproxUsd ??
+        Math.round(walletTokenBalance * 0.05 * 100) / 100,
     );
     const savedCardsCount = Number(addressData.savedCardsCount ?? 0);
 
@@ -3569,13 +3786,12 @@ export class OrganisationService {
     const paymentValidation = addressData.paymentValidation;
     const pendingPayment = addressData.pendingPayment;
 
-    const ledgerRows = await this.prisma.organisationBillingTransaction.findMany(
-      {
+    const ledgerRows =
+      await this.prisma.organisationBillingTransaction.findMany({
         where: { organisationId: organisation.id },
         orderBy: { occurredAt: 'desc' },
         take: 500,
-      },
-    );
+      });
 
     type OrgBillingTransactionRow = {
       id: string;
@@ -3588,19 +3804,23 @@ export class OrganisationService {
       date: string;
     };
 
-    const mapLedgerRow = (row: (typeof ledgerRows)[0]): OrgBillingTransactionRow => {
+    const mapLedgerRow = (
+      row: (typeof ledgerRows)[0],
+    ): OrgBillingTransactionRow => {
       const st = String(row.status).toLowerCase();
-      const status = st === 'failed' ? 'failed' : st === 'pending' ? 'pending' : 'completed';
+      const status =
+        st === 'failed' ? 'failed' : st === 'pending' ? 'pending' : 'completed';
       return {
-      id: row.reference || row.id,
-      status,
-      amountNgn: row.amountNgn,
-      ttkDelta: row.ttkDelta ?? null,
-      ttkColor: (row.ttkColor as OrgBillingTransactionRow['ttkColor']) ?? null,
-      type: row.type,
-      description: row.description,
-      date: row.occurredAt.toISOString(),
-    };
+        id: row.reference || row.id,
+        status,
+        amountNgn: row.amountNgn,
+        ttkDelta: row.ttkDelta ?? null,
+        ttkColor:
+          (row.ttkColor as OrgBillingTransactionRow['ttkColor']) ?? null,
+        type: row.type,
+        description: row.description,
+        date: row.occurredAt.toISOString(),
+      };
     };
 
     let transactions: OrgBillingTransactionRow[] = ledgerRows.map(mapLedgerRow);
@@ -3854,10 +4074,10 @@ export class OrganisationService {
       ? Number(planRow.priceAnnualUsd ?? planRow.priceMonthlyUsd)
       : Number(planRow.priceMonthlyUsd);
     const amountNgn = isAnnual
-      ? planRow.priceAnnualNgn ??
-        Math.round(Number(planRow.priceAnnualUsd ?? 0) * 1550)
-      : planRow.priceMonthlyNgn ??
-        Math.round(Number(planRow.priceMonthlyUsd) * 1550);
+      ? (planRow.priceAnnualNgn ??
+        Math.round(Number(planRow.priceAnnualUsd ?? 0) * 1550))
+      : (planRow.priceMonthlyNgn ??
+        Math.round(Number(planRow.priceMonthlyUsd) * 1550));
 
     const paymentReference = `TAL-${organisation.id.substring(0, 8).toUpperCase()}-${Date.now()}`;
 
@@ -4071,7 +4291,9 @@ export class OrganisationService {
         experienceYears: createJobDto.experienceYears,
         jobLevel: createJobDto.jobLevel ?? null,
         pay: payPayload,
-        startDate: createJobDto.startDate ? new Date(createJobDto.startDate) : null,
+        startDate: createJobDto.startDate
+          ? new Date(createJobDto.startDate)
+          : null,
         endDate: createJobDto.endDate ? new Date(createJobDto.endDate) : null,
         closingDate: createJobDto.closingDate
           ? new Date(createJobDto.closingDate)
@@ -4123,7 +4345,7 @@ export class OrganisationService {
     const locationStr =
       (updateDto as any).locations?.length > 0
         ? (updateDto as any).locations.join(', ')
-        : updateDto.location ?? existing.location;
+        : (updateDto.location ?? existing.location);
 
     const payDto = updateDto.pay as any;
     const payPayload =
@@ -4174,9 +4396,13 @@ export class OrganisationService {
         pay: JSON.parse(JSON.stringify(payPayload)),
         startDate: updateDto.startDate ? new Date(updateDto.startDate) : null,
         endDate: updateDto.endDate ? new Date(updateDto.endDate) : null,
-        closingDate: updateDto.closingDate ? new Date(updateDto.closingDate) : null,
+        closingDate: updateDto.closingDate
+          ? new Date(updateDto.closingDate)
+          : null,
         description: updateDto.description ?? '',
-        requirements: Array.isArray(updateDto.requirements) ? updateDto.requirements : [],
+        requirements: Array.isArray(updateDto.requirements)
+          ? updateDto.requirements
+          : [],
         applyCTA,
         qualifyingQuestions,
         requiredApplicantData,
@@ -4231,7 +4457,7 @@ export class OrganisationService {
       const meta = SYSTEM_ROLE_DEFINITIONS[roleKey];
       if (!meta) continue;
       const memberCount =
-        roleKey === 'org_owner' ? 1 : countMap[roleKey] ?? 0;
+        roleKey === 'org_owner' ? 1 : (countMap[roleKey] ?? 0);
       roles.push({
         id: roleKey,
         kind: 'system',
@@ -4361,7 +4587,9 @@ export class OrganisationService {
         ...(dto.description !== undefined
           ? { description: dto.description.trim() }
           : {}),
-        ...(dto.permissions !== undefined ? { permissions: dto.permissions } : {}),
+        ...(dto.permissions !== undefined
+          ? { permissions: dto.permissions }
+          : {}),
       },
     });
     const keys = Array.isArray(updated.permissions)
