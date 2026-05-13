@@ -1845,10 +1845,7 @@ export class OrganisationService {
           } else if (effectiveSearchType === 'fuzzy') {
             const words = title.split(/\s+/).filter(Boolean);
 
-            const roleFields = [
-              prof.profession,
-              ...(prof.workExperience || []).map((e: any) => e.role),
-            ]
+            const roleFields = [prof.profession]
               .filter(Boolean)
               .join(' ')
               .toLowerCase();
@@ -1858,10 +1855,7 @@ export class OrganisationService {
             );
             if (!anyWordMatches) return false;
           } else {
-            const roleFields = [
-              prof.profession,
-              ...(prof.workExperience || []).map((e: any) => e.role),
-            ]
+            const roleFields = [prof.profession]
               .filter(Boolean)
               .join(' ')
               .toLowerCase();
@@ -2123,7 +2117,7 @@ export class OrganisationService {
     jobTitle?: string;
     searchType?: 'strict' | 'partial' | 'fuzzy';
     location?: string;
-    domicile?: string;
+    // domicile?: string;
   }) {
     const searchType = (dto.searchType || 'partial') as
       | 'strict'
@@ -2133,24 +2127,24 @@ export class OrganisationService {
       dto.location && dto.location.toLowerCase() !== 'global'
         ? dto.location
         : undefined;
-    const dom = dto.domicile?.trim() || '';
-    let city: string | undefined;
+    // const dom = dto.domicile?.trim() || '';
+    // let city: string | undefined;
     // Fuzzy domicile matches all tokens in-memory; do not narrow with first-segment city only
-    if (dom && searchType !== 'fuzzy') {
-      const parts = dom
-        .split(',')
-        .map((p) => p.trim())
-        .filter(Boolean);
-      city = parts[0];
-    }
+    // if (dom && searchType !== 'fuzzy') {
+    //   const parts = dom
+    //     .split(',')
+    //     .map((p) => p.trim())
+    //     .filter(Boolean);
+    //   city = parts[0];
+    // }
     return {
       page: 1,
       limit: 100,
       jobTitle: dto.jobTitle,
       searchType,
       country,
-      city,
-      domicileFull: dom || undefined,
+      // city,
+      // domicileFull: dom || undefined,
     };
   }
 
@@ -2289,10 +2283,10 @@ export class OrganisationService {
           criteriaRaw.location != null && String(criteriaRaw.location).trim()
             ? String(criteriaRaw.location)
             : undefined,
-        domicile:
-          criteriaRaw.domicile != null && String(criteriaRaw.domicile).trim()
-            ? String(criteriaRaw.domicile)
-            : undefined,
+        // domicile:
+        //   criteriaRaw.domicile != null && String(criteriaRaw.domicile).trim()
+        //     ? String(criteriaRaw.domicile)
+        //     : undefined,
       }),
     );
 
